@@ -965,7 +965,11 @@ function SeasonSummary({teamId,seasons,setSeasons}){
       });
       // wins/losses from imported season not tracked (no game-by-game data)
     }
-    return{wins,losses,ties,runsFor,runsAgainst,games:gameList.length,players};
+    // Total games = scored games + imported record games (if no overlap)
+    const importedGames=importedRecord?(importedRecord.wins+importedRecord.losses+importedRecord.ties):0;
+    const scoredGames=gameList.length;
+    const totalGames=scoredGames+importedGames;
+    return{wins,losses,ties,runsFor,runsAgainst,games:totalGames,players};
   }
 
   // For alltime, aggregate across all years
@@ -1065,9 +1069,8 @@ function SeasonSummary({teamId,seasons,setSeasons}){
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
         <SB label="WINS" value={wins} color={C.green}/><SB label="LOSSES" value={losses} color={C.red}/>
         {ties>0&&<SB label="TIES" value={ties}/>}
-        <SB label="WIN %" value={pct} sub={`${games} games`} color={parseFloat(pct)>=0.5?C.green:C.red}/>
-        <SB label="RUNS FOR" value={runsFor} color={C.gold}/><SB label="AGAINST" value={runsAgainst} color={C.textMid}/>
-        <SB label="DIFF" value={(runsFor-runsAgainst>0?"+":"")+(runsFor-runsAgainst)} color={runsFor>=runsAgainst?C.green:C.red}/>
+        <SB label="WIN %" value={games>0?pct:"—"} sub={`${games} games`} color={games>0&&parseFloat(pct)>=0.5?C.green:games>0?C.red:C.textMid}/>
+        {runsFor>0||runsAgainst>0?<><SB label="RUNS FOR" value={runsFor} color={C.gold}/><SB label="AGAINST" value={runsAgainst} color={C.textMid}/><SB label="DIFF" value={(runsFor-runsAgainst>0?"+":"")+(runsFor-runsAgainst)} color={runsFor>=runsAgainst?C.green:C.red}/></>:<SB label="RUNS" value="—" color={C.textDim} sub="not tracked"/>}
       </div>
 
       {tab==="season"&&viewYear&&<div style={{marginBottom:24}}>
