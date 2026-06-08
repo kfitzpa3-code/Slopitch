@@ -1070,7 +1070,9 @@ function SeasonSummary({teamId,seasons,setSeasons}){
         <SB label="WINS" value={wins} color={C.green}/><SB label="LOSSES" value={losses} color={C.red}/>
         {ties>0&&<SB label="TIES" value={ties}/>}
         <SB label="WIN %" value={games>0?pct:"—"} sub={`${games} games`} color={games>0&&parseFloat(pct)>=0.5?C.green:games>0?C.red:C.textMid}/>
-        {runsFor>0||runsAgainst>0?<><SB label="RUNS FOR" value={runsFor} color={C.gold}/><SB label="AGAINST" value={runsAgainst} color={C.textMid}/><SB label="DIFF" value={(runsFor-runsAgainst>0?"+":"")+(runsFor-runsAgainst)} color={runsFor>=runsAgainst?C.green:C.red}/></>:<SB label="RUNS" value="—" color={C.textDim} sub="not tracked"/>}
+        {runsFor>0&&<SB label="RUNS FOR" value={runsFor} color={C.gold}/>}
+        {runsAgainst>0&&<SB label="AGAINST" value={runsAgainst} color={C.textMid}/>}
+        {(runsFor>0||runsAgainst>0)&&<SB label="DIFF" value={(runsFor-runsAgainst>0?"+":"")+(runsFor-runsAgainst)} color={runsFor>=runsAgainst?C.green:C.red}/>}
       </div>
 
       {tab==="season"&&viewYear&&<div style={{marginBottom:24}}>
