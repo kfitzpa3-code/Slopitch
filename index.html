@@ -133,7 +133,10 @@ function calcStats(atBats){
   const tb=s1+s2*2+s3*3+hr*4;
   const avg=ab>0?fmt3(hits/ab):".000",obp=(ab+bb+sac)>0?fmt3((hits+bb+sac)/(ab+bb+sac)):".000";
   const slg=ab>0?fmt3(tb/ab):".000",ops=ab>0?fmt3(parseFloat("0"+obp)+parseFloat("0"+slg)):".000";
-  return{ab,hits,singles:s1,doubles:s2,triples:s3,hr,bb,sac,k,r,rbi,tb,avg,obp,slg,ops};
+  // GP: count distinct games (innings) this player appeared in
+  const gameInnings=new Set(atBats.map(a=>a.inning));
+  const gp=ab>0||bb>0?1:0; // per-game calc — summed at season level
+  return{ab,hits,singles:s1,doubles:s2,triples:s3,hr,bb,sac,k,r,rbi,tb,avg,obp,slg,ops,gp};
 }
 function totalScore(inn,side){return inn.reduce((s,i)=>s+(parseInt(i[side])||0),0);}
 function emptyInnings(){return Array.from({length:TOTAL_INNINGS},()=>({us:"",them:""}));}
@@ -843,12 +846,16 @@ function SeasonSummary({teamId,seasons,setSeasons}){
       runsFor+=us;runsAgainst+=them;
       if(us>them)wins++;else if(them>us)losses++;else ties++;
       (g.lineup||[]).forEach(p=>{
-        if(!playerMap[p.name])playerMap[p.name]={name:p.name,atBats:[]};
-        playerMap[p.name].atBats=[...playerMap[p.name].atBats,...(p.atBats||[])];
+        if(!playerMap[p.name])playerMap[p.name]={name:p.name,atBats:[],gpCount:0};
+        const abs=p.atBats||[];
+        // Count this game if player had any AB or BB
+        const hadPA=abs.some(a=>a.outcome);
+        if(hadPA)playerMap[p.name].gpCount++;
+        playerMap[p.name].atBats=[...playerMap[p.name].atBats,...abs];
       });
     });
     // Calc stats from at-bats
-    let players=Object.values(playerMap).filter(p=>p.atBats.length>0).map(p=>({name:p.name,...calcStats(p.atBats)}));
+    let players=Object.values(playerMap).filter(p=>p.atBats.length>0).map(p=>({name:p.name,...calcStats(p.atBats),gp:p.gpCount||1}));
     // Merge imported stats — if player exists in both, sum the raw counting stats
     if(importedMap){
       Object.values(importedMap).forEach(imp=>{
@@ -1017,13 +1024,14 @@ function SeasonSummary({teamId,seasons,setSeasons}){
           {tab==="season"&&yearData._imported&&<span style={{color:C.textMid,fontWeight:400,marginLeft:8,fontSize:11}}>(game stats + imported combined)</span>}
         </div>
         <div style={{overflowX:"auto"}}>
-          <table style={{borderCollapse:"collapse",width:"100%",minWidth:600}}>
-            <thead><tr>{["PLAYER","AB","H","R","RBI","HR","BB","K","AVG","OBP","SLG","OPS"].map(c=><th key={c} style={TH(c==="PLAYER"?"left":"center")}>{c}</th>)}</tr></thead>
+          <table style={{borderCollapse:"collapse",width:"100%",minWidth:640}}>
+            <thead><tr>{["PLAYER","G","AB","H","R","RBI","HR","BB","K","AVG","OBP","SLG","OPS"].map(c=><th key={c} style={TH(c==="PLAYER"?"left":"center")}>{c}</th>)}</tr></thead>
             <tbody>{sorted.map((r,i)=>(
               <tr key={i} style={{background:i%2===0?C.bgCard:C.bgRow}}>
                 <td style={{...TD("left"),fontWeight:600,paddingLeft:12}}>
                   {r.name}{r.imported&&<span style={{color:C.textDim,fontSize:10,marginLeft:6}}>imported</span>}
                 </td>
+                <td style={{...TD(),color:C.textMid}}>{r.gp||0}</td>
                 <td style={TD()}>{r.ab}</td><td style={TD()}>{r.hits}</td>
                 <td style={{...TD(),color:r.r>0?C.green:C.textDim,fontWeight:r.r>0?700:400}}>{r.r}</td>
                 <td style={{...TD(),color:r.rbi>0?C.gold:C.textDim,fontWeight:r.rbi>0?700:400}}>{r.rbi}</td>
@@ -1166,13 +1174,13 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
 function Stats({lineup}){
   const active=lineup.filter(p=>p.atBats.length>0);
   const rows=active.map(p=>({name:p.name,...calcStats(p.atBats)}));
-  const tot=["ab","hits","bb","sac","k","hr","r","rbi","tb"].reduce((a,k)=>({...a,[k]:rows.reduce((s,r)=>s+r[k],0)}),{});
+  const tot=["ab","hits","bb","sac","k","hr","r","rbi","tb"].reduce((a,k)=>({...a,[k]:rows.reduce((s,r)=>s+r[k],0)}),{gp:null});
   const{ab:tAB,hits:tH,bb:tBB,sac:tSAC}=tot;
   tot.avg=tAB>0?fmt3(tH/tAB):".000";tot.obp=(tAB+tBB+tSAC)>0?fmt3((tH+tBB+tSAC)/(tAB+tBB+tSAC)):".000";
   tot.slg=tAB>0?fmt3(tot.tb/tAB):".000";tot.ops=tAB>0?fmt3(parseFloat("0"+tot.obp)+parseFloat("0"+tot.slg)):".000";
   const clr=v=>parseFloat(v)>=0.5?C.green:parseFloat(v)>=0.35?C.gold:C.textMid;
   if(!rows.length)return <p style={{color:C.textMid,fontFamily:"'Oswald',sans-serif"}}>No at-bats yet.</p>;
-  return <div style={{overflowX:"auto"}}><table style={{borderCollapse:"collapse",width:"100%",minWidth:640}}><thead><tr>{["PLAYER","AB","H","R","RBI","BB","SAC","K","HR","AVG","OBP","SLG","OPS"].map(c=><th key={c} style={TH(c==="PLAYER"?"left":"center")}>{c}</th>)}</tr></thead><tbody>{[...rows,{...tot,name:"TOTALS",isTotal:true}].map((r,i)=><tr key={i} style={{background:r.isTotal?C.bg:i%2===0?C.bgCard:C.bgRow}}><td style={{...TD("left"),color:r.isTotal?C.gold:C.text,fontWeight:r.isTotal?900:600,paddingLeft:12}}>{r.name}</td><td style={TD()}>{r.ab}</td><td style={TD()}>{r.hits}</td><td style={{...TD(),color:r.r>0?C.green:C.textDim,fontWeight:r.r>0?700:400}}>{r.r}</td><td style={{...TD(),color:r.rbi>0?C.gold:C.textDim,fontWeight:r.rbi>0?700:400}}>{r.rbi}</td><td style={TD()}>{r.bb}</td><td style={TD()}>{r.sac}</td><td style={TD()}>{r.k}</td><td style={{...TD(),color:r.hr>0?C.red:C.textDim,fontWeight:r.hr>0?700:400}}>{r.hr}</td>{[r.avg,r.obp,r.slg,r.ops].map((v,j)=><td key={j} style={{...TD(),color:clr(v),fontWeight:700}}>{v}</td>)}</tr>)}</tbody></table></div>;
+  return <div style={{overflowX:"auto"}}><table style={{borderCollapse:"collapse",width:"100%",minWidth:680}}><thead><tr>{["PLAYER","G","AB","H","R","RBI","BB","SAC","K","HR","AVG","OBP","SLG","OPS"].map(c=><th key={c} style={TH(c==="PLAYER"?"left":"center")}>{c}</th>)}</tr></thead><tbody>{[...rows,{...tot,name:"TOTALS",isTotal:true}].map((r,i)=><tr key={i} style={{background:r.isTotal?C.bg:i%2===0?C.bgCard:C.bgRow}}><td style={{...TD("left"),color:r.isTotal?C.gold:C.text,fontWeight:r.isTotal?900:600,paddingLeft:12}}>{r.name}</td><td style={{...TD(),color:C.textMid}}>{r.gp===null?"—":r.gp||1}</td><td style={TD()}>{r.ab}</td><td style={TD()}>{r.hits}</td><td style={{...TD(),color:r.r>0?C.green:C.textDim,fontWeight:r.r>0?700:400}}>{r.r}</td><td style={{...TD(),color:r.rbi>0?C.gold:C.textDim,fontWeight:r.rbi>0?700:400}}>{r.rbi}</td><td style={TD()}>{r.bb}</td><td style={TD()}>{r.sac}</td><td style={TD()}>{r.k}</td><td style={{...TD(),color:r.hr>0?C.red:C.textDim,fontWeight:r.hr>0?700:400}}>{r.hr}</td>{[r.avg,r.obp,r.slg,r.ops].map((v,j)=><td key={j} style={{...TD(),color:clr(v),fontWeight:700}}>{v}</td>)}</tr>)}</tbody></table></div>;
 }
 
 // ── Game Summary ───────────────────────────────────────────────────────────
