@@ -827,6 +827,82 @@ function ImportStatsModal({teamId,seasons,setSeasons,onClose}){
   </div>;
 }
 
+function SortableStatsTable({players,label,showImportedNote}){
+  const[sortCol,setSortCol]=useState("ops");
+  const[sortDir,setSortDir]=useState("desc");
+
+  const cols=[
+    {key:"name",label:"PLAYER",align:"left",type:"str"},
+    {key:"gp",label:"G",align:"center",type:"num"},
+    {key:"ab",label:"AB",align:"center",type:"num"},
+    {key:"hits",label:"H",align:"center",type:"num"},
+    {key:"r",label:"R",align:"center",type:"num"},
+    {key:"rbi",label:"RBI",align:"center",type:"num"},
+    {key:"hr",label:"HR",align:"center",type:"num"},
+    {key:"bb",label:"BB",align:"center",type:"num"},
+    {key:"k",label:"K",align:"center",type:"num"},
+    {key:"avg",label:"AVG",align:"center",type:"rate"},
+    {key:"obp",label:"OBP",align:"center",type:"rate"},
+    {key:"slg",label:"SLG",align:"center",type:"rate"},
+    {key:"ops",label:"OPS",align:"center",type:"rate"},
+  ];
+
+  const handleSort=col=>{
+    if(sortCol===col)setSortDir(d=>d==="desc"?"asc":"desc");
+    else{setSortCol(col);setSortDir(col==="name"?"asc":"desc");}
+  };
+
+  const sorted=[...players].sort((a,b)=>{
+    const col=cols.find(c=>c.key===sortCol);
+    let av=a[sortCol],bv=b[sortCol];
+    if(col?.type==="rate"){av=parseFloat("0"+av)||0;bv=parseFloat("0"+bv)||0;}
+    else if(col?.type==="num"){av=av||0;bv=bv||0;}
+    else{av=(av||"").toLowerCase();bv=(bv||"").toLowerCase();}
+    if(av<bv)return sortDir==="asc"?-1:1;
+    if(av>bv)return sortDir==="asc"?1:-1;
+    return 0;
+  });
+
+  const clr=v=>parseFloat(v)>=0.5?C.green:parseFloat(v)>=0.35?C.gold:C.textMid;
+
+  const SortTH=({col})=>{
+    const active=sortCol===col.key;
+    const arrow=active?(sortDir==="desc"?"↓":"↑"):"↕";
+    return <th onClick={()=>handleSort(col.key)} style={{...TH(col.align),cursor:"pointer",userSelect:"none",color:active?C.gold:C.textMid,background:active?C.bgRow:C.bgCard,transition:"all 0.15s",whiteSpace:"nowrap"}} title={`Sort by ${col.label}`}>
+      {col.label} <span style={{fontSize:9,opacity:active?1:0.4,marginLeft:2}}>{arrow}</span>
+    </th>;
+  };
+
+  return <div>
+    <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,letterSpacing:2,color:C.gold}}>{label}</div>
+      {showImportedNote&&<span style={{color:C.textMid,fontFamily:"'Oswald',sans-serif",fontWeight:400,fontSize:11}}>(game stats + imported combined)</span>}
+      <span style={{fontFamily:"'Oswald',sans-serif",fontSize:10,color:C.textDim,marginLeft:"auto"}}>Click any column to sort</span>
+    </div>
+    <div style={{overflowX:"auto"}}>
+      <table style={{borderCollapse:"collapse",width:"100%",minWidth:640}}>
+        <thead><tr>{cols.map(col=><SortTH key={col.key} col={col}/>)}</tr></thead>
+        <tbody>{sorted.map((r,i)=>(
+          <tr key={i} style={{background:i%2===0?C.bgCard:C.bgRow}}>
+            <td style={{...TD("left"),fontWeight:600,paddingLeft:12}}>
+              {r.name}{r.imported&&<span style={{color:C.textDim,fontSize:10,marginLeft:6}}>imported</span>}
+            </td>
+            <td style={{...TD(),color:C.textMid}}>{r.gp||0}</td>
+            <td style={TD()}>{r.ab}</td>
+            <td style={TD()}>{r.hits}</td>
+            <td style={{...TD(),color:r.r>0?C.green:C.textDim,fontWeight:r.r>0?700:400}}>{r.r}</td>
+            <td style={{...TD(),color:r.rbi>0?C.gold:C.textDim,fontWeight:r.rbi>0?700:400}}>{r.rbi}</td>
+            <td style={{...TD(),color:r.hr>0?C.red:C.textDim,fontWeight:r.hr>0?700:400}}>{r.hr}</td>
+            <td style={TD()}>{r.bb}</td>
+            <td style={{...TD(),color:r.k>0?C.red:C.textDim}}>{r.k}</td>
+            {[r.avg,r.obp,r.slg,r.ops].map((v,j)=><td key={j} style={{...TD(),color:clr(v),fontWeight:700}}>{v}</td>)}
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
 function SeasonSummary({teamId,seasons,setSeasons}){
   const allYears=Object.keys(seasons).sort((a,b)=>b-a);
   const currentYear=new Date().getFullYear().toString();
@@ -866,6 +942,7 @@ function SeasonSummary({teamId,seasons,setSeasons}){
           existing.doubles+=(imp.doubles||0);existing.triples+=(imp.triples||0);existing.hr+=(imp.hr||0);
           existing.bb+=(imp.bb||0);existing.k+=(imp.k||0);existing.sac+=(imp.sac||0);
           existing.r+=(imp.r||0);existing.rbi+=(imp.rbi||0);
+          existing.gp=(existing.gp||0)+(imp.gp||0);
           // recalc rates
           const{ab,hits,bb,sac,singles,doubles,triples,hr}=existing;
           const tb=singles+doubles*2+triples*3+hr*4;
@@ -882,7 +959,8 @@ function SeasonSummary({teamId,seasons,setSeasons}){
           const obp=(ab+bb+sac)>0?fmt3((hits+bb+sac)/(ab+bb+sac)):".000";
           const slg=ab>0?fmt3(tb/ab):".000";
           const ops=ab>0?fmt3(parseFloat("0"+obp)+parseFloat("0"+slg)):".000";
-          players.push({name:imp.name,ab,hits,singles,doubles,triples,hr,bb,k:imp.k||0,sac,r:imp.r||0,rbi:imp.rbi||0,tb,avg,obp,slg,ops,imported:true});
+          const gp=imp.gp||0;
+          players.push({name:imp.name,ab,hits,singles,doubles,triples,hr,bb,k:imp.k||0,sac,r:imp.r||0,rbi:imp.rbi||0,tb,avg,obp,slg,ops,gp,imported:true});
         }
       });
       // wins/losses from imported season not tracked (no game-by-game data)
@@ -912,7 +990,7 @@ function SeasonSummary({teamId,seasons,setSeasons}){
           allImported[p.name].triples+=(p.triples||0);allImported[p.name].hr+=(p.hr||0);
           allImported[p.name].bb+=(p.bb||0);allImported[p.name].k+=(p.k||0);
           allImported[p.name].sac+=(p.sac||0);allImported[p.name].r+=(p.r||0);
-          allImported[p.name].rbi+=(p.rbi||0);
+          allImported[p.name].rbi+=(p.rbi||0);allImported[p.name].gp=(allImported[p.name].gp||0)+(p.gp||0);
         }
       });}
     });
@@ -1018,31 +1096,7 @@ function SeasonSummary({teamId,seasons,setSeasons}){
         }
       </div>}
 
-      {players.length>0&&<div>
-        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,letterSpacing:2,color:C.gold,marginBottom:10}}>
-          {tab==="alltime"?"ALL-TIME PLAYER STATS":"PLAYER STATS — "+viewYear}
-          {tab==="season"&&yearData._imported&&<span style={{color:C.textMid,fontWeight:400,marginLeft:8,fontSize:11}}>(game stats + imported combined)</span>}
-        </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{borderCollapse:"collapse",width:"100%",minWidth:640}}>
-            <thead><tr>{["PLAYER","G","AB","H","R","RBI","HR","BB","K","AVG","OBP","SLG","OPS"].map(c=><th key={c} style={TH(c==="PLAYER"?"left":"center")}>{c}</th>)}</tr></thead>
-            <tbody>{sorted.map((r,i)=>(
-              <tr key={i} style={{background:i%2===0?C.bgCard:C.bgRow}}>
-                <td style={{...TD("left"),fontWeight:600,paddingLeft:12}}>
-                  {r.name}{r.imported&&<span style={{color:C.textDim,fontSize:10,marginLeft:6}}>imported</span>}
-                </td>
-                <td style={{...TD(),color:C.textMid}}>{r.gp||0}</td>
-                <td style={TD()}>{r.ab}</td><td style={TD()}>{r.hits}</td>
-                <td style={{...TD(),color:r.r>0?C.green:C.textDim,fontWeight:r.r>0?700:400}}>{r.r}</td>
-                <td style={{...TD(),color:r.rbi>0?C.gold:C.textDim,fontWeight:r.rbi>0?700:400}}>{r.rbi}</td>
-                <td style={{...TD(),color:r.hr>0?C.red:C.textDim,fontWeight:r.hr>0?700:400}}>{r.hr}</td>
-                <td style={TD()}>{r.bb}</td><td style={{...TD(),color:r.k>0?C.red:C.textDim}}>{r.k}</td>
-                {[r.avg,r.obp,r.slg,r.ops].map((v,j)=><td key={j} style={{...TD(),color:clr(v),fontWeight:700}}>{v}</td>)}
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      </div>}
+      {players.length>0&&<SortableStatsTable players={players} label={tab==="alltime"?"ALL-TIME PLAYER STATS":"PLAYER STATS — "+viewYear} showImportedNote={tab==="season"&&!!yearData._imported}/>}
 
       {players.length===0&&games===0&&!yearData?._imported&&<div style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40,marginBottom:10}}>📊</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:15,color:C.textMid}}>No data yet for this season.</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,color:C.textDim,marginTop:6}}>Save a completed game or use "Import Past Season" above.</div></div>}
     </>}
