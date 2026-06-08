@@ -563,45 +563,87 @@ function parseCSVLine(line){
 }
 
 function parseStatCSV(text){
-  // Detect format: SloPitch app export (Season/Game/Player/Stats rows) vs simple summary table
+  // Returns either:
+  //   array of player objects (summary CSV)
+  //   { multiYear: true, byYear: { "2014": { players, wins, losses, ties }, ... } } (SloPitch export)
   const lines=text.trim().split("\n").filter(l=>l.trim());
   const firstVal=parseCSVLine(lines[0])[0].replace(/"/g,"").trim().toUpperCase();
-  
   if(firstVal==="SEASON"||firstVal==="PLAYER"||firstVal==="GAME"||firstVal==="STATS"){
-    return parseSloPitchExport(lines);
+    return {multiYear:true,byYear:parseSloPitchExport(lines)};
   } else {
     return parseSummaryCSV(lines);
   }
 }
 
 function parseSloPitchExport(lines){
-  // Format: Season/Game/Player/Stats rows from the app's export
-  const playerMap={};
+  // Returns { byYear: { "2014": { players: [...], wins, losses, ties }, ... } }
+  // Each player entry has stats accumulated for that year only.
+
+  const byYear={};  // year -> { playerMap, wins, losses, ties }
+  let currentSeason=null; // current season year from "Season" rows
   let currentPlayer=null;
   let statsHeaders=null;
-  
+
+  function getYear(dateStr){
+    if(!dateStr)return null;
+    // "2014-05-13 21:30:00" or similar
+    const m=dateStr.match(/\b(\d{4})\b/);
+    return m?m[1]:null;
+  }
+
+  function ensureYear(yr){
+    if(!byYear[yr])byYear[yr]={playerMap:{},wins:0,losses:0,ties:0};
+  }
+
   for(let i=0;i<lines.length;i++){
     const vals=parseCSVLine(lines[i]).map(v=>v.replace(/"/g,"").trim());
     const rowType=vals[0].toUpperCase();
-    
-    if(rowType==="PLAYER"){
-      // "Player","FirstName","LastName",...
+
+    if(rowType==="SEASON"){
+      // "Season","2014","2014-05-13","2014-09-14",...
+      currentSeason=vals[1]||null;
+      currentPlayer=null;statsHeaders=null;
+
+    } else if(rowType==="GAME"&&currentSeason){
+      // "Game","us","them","datetime","opposition","location"
+      const us=parseInt(vals[1]);const them=parseInt(vals[2]);
+      if(!isNaN(us)&&!isNaN(them)&&us!==1&&them!==1||(us===them&&us!==1)){
+        // score of 1-1 is often a forfeit/no-data placeholder — skip
+        // but keep actual 1-1 ties if both aren't suspiciously equal forfeits
+      }
+      // Use datetime to get year, fallback to currentSeason
+      const dateStr=vals[3]||"";
+      const yr=getYear(dateStr)||currentSeason;
+      if(yr&&!isNaN(us)&&!isNaN(them)&&!(us===1&&them===1)){
+        ensureYear(yr);
+        if(us>them)byYear[yr].wins++;
+        else if(them>us)byYear[yr].losses++;
+        else byYear[yr].ties++;
+      }
+
+    } else if(rowType==="PLAYER"){
       const fname=vals[1]||"";const lname=vals[2]||"";
-      currentPlayer=(fname+" "+lname).trim();
-      statsHeaders=null; // reset headers for next stats block
+      currentPlayer=(fname.trim()+" "+lname.trim()).trim();
+      statsHeaders=null;
+
     } else if(rowType===""&&vals[1]&&vals[1].toUpperCase()==="DATE"){
-      // header row for stats: ,"Date","Opposition","PA","AB","H","1B","2B","3B","HR","R","RBI","BB",...
       statsHeaders=vals.slice(1).map(h=>h.toUpperCase());
+
     } else if(rowType==="STATS"&&currentPlayer&&statsHeaders){
-      // Stats row
       const row={};
       statsHeaders.forEach((h,j)=>{row[h]=(vals[j+1]||"").trim();});
-      if(!playerMap[currentPlayer]){
-        playerMap[currentPlayer]={name:currentPlayer,ab:0,r:0,hits:0,singles:0,doubles:0,triples:0,hr:0,bb:0,rbi:0,k:0,sac:0,sb:0,gp:0};
+      // Determine year from the date in this stats row
+      const yr=getYear(row["DATE"])||currentSeason;
+      if(!yr)continue;
+      ensureYear(yr);
+      const pm=byYear[yr].playerMap;
+      if(!pm[currentPlayer]){
+        pm[currentPlayer]={name:currentPlayer,ab:0,r:0,hits:0,singles:0,doubles:0,triples:0,hr:0,bb:0,rbi:0,k:0,sac:0,sb:0,gp:0};
       }
-      const p=playerMap[currentPlayer];
+      const p=pm[currentPlayer];
       const ab=parseInt(row["AB"])||0;
-      if(ab>0||parseInt(row["BB"])||0>0) p.gp++;
+      const bb=parseInt(row["BB"])||0;
+      if(ab>0||bb>0)p.gp++;
       p.ab+=ab;
       p.hits+=parseInt(row["H"])||0;
       p.singles+=parseInt(row["1B"])||0;
@@ -610,14 +652,22 @@ function parseSloPitchExport(lines){
       p.hr+=parseInt(row["HR"])||0;
       p.r+=parseInt(row["R"])||0;
       p.rbi+=parseInt(row["RBI"])||0;
-      p.bb+=parseInt(row["BB"])||0;
+      p.bb+=bb;
       p.k+=parseInt(row["K"])||0;
-      p.sac+=parseInt(row["SH"])||parseInt(row["SAC"])||parseInt(row["SF"])||0;
+      p.sac+=(parseInt(row["SH"])||0)+(parseInt(row["SAC"])||0)+(parseInt(row["SF"])||0);
       p.sb+=parseInt(row["SB"])||0;
     }
-    // Skip Season and Game rows — we only care about player stats
   }
-  return Object.values(playerMap).filter(p=>p.ab>0||p.bb>0);
+
+  // Convert playerMaps to arrays
+  const result={};
+  Object.entries(byYear).forEach(([yr,data])=>{
+    result[yr]={
+      players:Object.values(data.playerMap).filter(p=>p.ab>0||p.bb>0),
+      wins:data.wins,losses:data.losses,ties:data.ties
+    };
+  });
+  return result;
 }
 
 function parseSummaryCSV(lines){
@@ -640,6 +690,7 @@ function ImportStatsModal({teamId,seasons,setSeasons,onClose}){
   const[tab,setTab]=useState("csv");
   const[csvMsg,setCsvMsg]=useState("");
   const[csvPlayers,setCsvPlayers]=useState([]);
+  const[csvMultiYear,setCsvMultiYear]=useState(null);
   const[manualRows,setManualRows]=useState([{name:"",gp:"",ab:"",r:"",h:"",singles:"",doubles:"",triples:"",hr:"",bb:"",rbi:"",k:"",sac:""}]);
   const fileRef=React.useRef();
 
@@ -648,10 +699,20 @@ function ImportStatsModal({teamId,seasons,setSeasons,onClose}){
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
-        const players=parseStatCSV(ev.target.result);
-        if(players.length===0){setCsvMsg("No players found — check format.");return;}
-        setCsvPlayers(players);setCsvMsg(`✓ Found ${players.length} players. Review below then click Import.`);
-      }catch(ex){setCsvMsg("Could not parse CSV.");}
+        const result=parseStatCSV(ev.target.result);
+        if(result.multiYear){
+          // Multi-year SloPitch export — show summary and import all years
+          const years=Object.keys(result.byYear).sort();
+          const totalPlayers=new Set(years.flatMap(yr=>result.byYear[yr].players.map(p=>p.name))).size;
+          setCsvPlayers([]);
+          setCsvMultiYear(result.byYear);
+          setCsvMsg(`✓ Found ${years.length} season(s) (${years.join(", ")}) with ${totalPlayers} unique players. Click Import to save all years.`);
+        } else {
+          if(result.length===0){setCsvMsg("No players found — check format.");return;}
+          setCsvPlayers(result);setCsvMultiYear(null);
+          setCsvMsg(`✓ Found ${result.length} players. Review below then click Import.`);
+        }
+      }catch(ex){setCsvMsg("Could not parse CSV: "+ex.message);}
     };
     reader.readAsText(file);
   };
@@ -661,11 +722,34 @@ function ImportStatsModal({teamId,seasons,setSeasons,onClose}){
   const removeRow=i=>setManualRows(rows=>rows.filter((_,j)=>j!==i));
 
   const doImport=()=>{
-    const players=tab==="csv"?csvPlayers:manualRows.filter(r=>r.name.trim()).map(r=>({name:r.name.trim(),gp:parseInt(r.gp)||0,ab:parseInt(r.ab)||0,r:parseInt(r.r)||0,hits:parseInt(r.h)||0,singles:parseInt(r.singles)||0,doubles:parseInt(r.doubles)||0,triples:parseInt(r.triples)||0,hr:parseInt(r.hr)||0,bb:parseInt(r.bb)||0,rbi:parseInt(r.rbi)||0,k:parseInt(r.k)||0,sac:parseInt(r.sac)||0,sb:0}));
-    if(!players.length){setCsvMsg("No player data to import.");return;}
-    const importMap={};
-    players.forEach(p=>{importMap[p.name]=p;});
-    const updated={...seasons,[year]:{...(seasons[year]||{}),_imported:importMap}};
+    let updated={...seasons};
+
+    if(tab==="csv"&&csvMultiYear){
+      // Multi-year SloPitch export — import each year separately
+      Object.entries(csvMultiYear).forEach(([yr,data])=>{
+        const importMap={};
+        data.players.forEach(p=>{importMap[p.name]=p;});
+        // Store W/L record as a special _record entry
+        updated[yr]={
+          ...(updated[yr]||{}),
+          _imported:importMap,
+          _record:{wins:data.wins,losses:data.losses,ties:data.ties}
+        };
+      });
+    } else {
+      // Single-year import (summary CSV or manual)
+      const players=tab==="csv"?csvPlayers:manualRows.filter(r=>r.name.trim()).map(r=>({
+        name:r.name.trim(),gp:parseInt(r.gp)||0,ab:parseInt(r.ab)||0,r:parseInt(r.r)||0,
+        hits:parseInt(r.h)||0,singles:parseInt(r.singles)||0,doubles:parseInt(r.doubles)||0,
+        triples:parseInt(r.triples)||0,hr:parseInt(r.hr)||0,bb:parseInt(r.bb)||0,
+        rbi:parseInt(r.rbi)||0,k:parseInt(r.k)||0,sac:parseInt(r.sac)||0,sb:0
+      }));
+      if(!players.length){setCsvMsg("No player data to import.");return;}
+      const importMap={};
+      players.forEach(p=>{importMap[p.name]=p;});
+      updated[year]={...(updated[year]||{}),_imported:importMap};
+    }
+
     setSeasons(updated);tSave(teamId,"seasons",updated);
     onClose();
   };
@@ -747,8 +831,11 @@ function SeasonSummary({teamId,seasons,setSeasons}){
   const[tab,setTab]=useState("season");
   const[showImport,setShowImport]=useState(false);
 
-  function aggregateGames(gameList, importedMap){
-    let wins=0,losses=0,ties=0,runsFor=0,runsAgainst=0;
+  function aggregateGames(gameList, importedMap, importedRecord){
+    let wins=importedRecord?importedRecord.wins:0;
+    let losses=importedRecord?importedRecord.losses:0;
+    let ties=importedRecord?importedRecord.ties:0;
+    let runsFor=0,runsAgainst=0;
     const playerMap={};
     // From saved games (scored in-app)
     gameList.forEach(g=>{
@@ -798,9 +885,18 @@ function SeasonSummary({teamId,seasons,setSeasons}){
 
   // For alltime, aggregate across all years
   function aggregateAllTime(){
-    const allGames=Object.entries(seasons).flatMap(([yr,ydata])=>Object.entries(ydata).filter(([k])=>k!=="gamesObj"&&k!=="_imported").map(([,v])=>v));
+    const allGames=Object.entries(seasons).flatMap(([yr,ydata])=>Object.entries(ydata).filter(([k])=>!k.startsWith("_")).map(([,v])=>v));
     const allImported={};
+    // Sum imported W/L records across all years
+    const combinedRecord={wins:0,losses:0,ties:0};
+    let hasRecord=false;
     Object.entries(seasons).forEach(([yr,ydata])=>{
+      if(ydata._record){
+        combinedRecord.wins+=ydata._record.wins||0;
+        combinedRecord.losses+=ydata._record.losses||0;
+        combinedRecord.ties+=ydata._record.ties||0;
+        hasRecord=true;
+      }
       if(ydata._imported){Object.values(ydata._imported).forEach(p=>{
         if(!allImported[p.name])allImported[p.name]={...p};
         else{
@@ -813,13 +909,14 @@ function SeasonSummary({teamId,seasons,setSeasons}){
         }
       });}
     });
-    return aggregateGames(allGames,Object.keys(allImported).length>0?allImported:null);
+    return aggregateGames(allGames,Object.keys(allImported).length>0?allImported:null,hasRecord?combinedRecord:null);
   }
 
   const yearData=viewYear&&seasons[viewYear]?seasons[viewYear]:{};
-  const yearGames=Object.entries(yearData).filter(([k])=>k!=="_imported").map(([,v])=>v);
+  const yearGames=Object.entries(yearData).filter(([k])=>!k.startsWith("_")).map(([,v])=>v);
   const yearImported=yearData._imported||null;
-  const data=tab==="alltime"?aggregateAllTime():aggregateGames(yearGames,yearImported);
+  const yearRecord=yearData._record||null; // imported W/L record
+  const data=tab==="alltime"?aggregateAllTime():aggregateGames(yearGames,yearImported,yearRecord);
   const{wins,losses,ties,runsFor,runsAgainst,games,players}=data;
   const pct=games>0?fmt3(wins/games):".000";
   const sorted=[...players].sort((a,b)=>parseFloat(b.ops)-parseFloat(a.ops));
@@ -830,16 +927,18 @@ function SeasonSummary({teamId,seasons,setSeasons}){
     setSeasons(prev=>{
       const u={...prev,[year]:{...prev[year]}};
       delete u[year][key];
-      if(Object.keys(u[year]).filter(k=>k!=="_imported").length===0&&!u[year]._imported)delete u[year];
+      if(Object.keys(u[year]).filter(k=>!k.startsWith("_")).length===0&&!u[year]._imported)delete u[year];
       tSave(teamId,"seasons",u);return u;
     });
   };
 
   const deleteImported=year=>{
-    if(!confirm(`Remove imported stats for ${year}?`))return;
+    if(!confirm(`Remove imported stats and record for ${year}?`))return;
     setSeasons(prev=>{
       const u={...prev,[year]:{...prev[year]}};
       delete u[year]._imported;
+      delete u[year]._record;
+      if(Object.keys(u[year]).filter(k=>!k.startsWith("_")).length===0)delete u[year];
       tSave(teamId,"seasons",u);return u;
     });
   };
@@ -889,15 +988,16 @@ function SeasonSummary({teamId,seasons,setSeasons}){
       {tab==="season"&&viewYear&&<div style={{marginBottom:24}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,letterSpacing:2,color:C.gold}}>GAME LOG</div>
-          {yearData._imported&&<div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textMid}}>📥 Imported stats active</span>
-            <button onClick={()=>deleteImported(viewYear)} style={{...BTN(C.bg,C.red),border:`1px solid ${C.border}`,fontSize:11,padding:"3px 10px"}}>Remove</button>
+          {(yearData._imported||yearData._record)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {yearData._record&&<span style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textMid}}>📥 Record: {yearData._record.wins}W-{yearData._record.losses}L{yearData._record.ties>0?`-${yearData._record.ties}T`:""} (imported)</span>}
+            {yearData._imported&&<span style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textMid}}>{yearData._record?"·":""} Player stats imported</span>}
+            <button onClick={()=>deleteImported(viewYear)} style={{...BTN(C.bg,C.red),border:`1px solid ${C.border}`,fontSize:11,padding:"3px 10px"}}>Remove Imported</button>
           </div>}
         </div>
         {yearGames.length===0&&!yearData._imported
           ?<div style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:13}}>No games saved yet. Save a completed game or import past stats above.</div>
           :yearGames.map((g,gi)=>{
-            const key=Object.entries(yearData).filter(([k])=>k!=="_imported").find(([,v])=>v===g)?.[0]||gi;
+            const key=Object.entries(yearData).filter(([k])=>!k.startsWith("_")).find(([,v])=>v===g)?.[0]||gi;
             const us=parseInt(g.finalUs)||0,them=parseInt(g.finalThem)||0;
             const result=us>them?"W":them>us?"L":"T";
             const rc={W:C.green,L:C.red,T:C.textMid}[result];
