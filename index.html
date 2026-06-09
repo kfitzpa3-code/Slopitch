@@ -411,7 +411,7 @@ function RegisterScreen({onSuccess,onBack}){
         <div style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textDim,letterSpacing:2,marginBottom:10}}>OR ADD MANUALLY</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
           <input style={{...inp,flex:"2 1 150px"}} placeholder="Opponent *" value={newGame.opp} onChange={e=>setNewGame(g=>({...g,opp:e.target.value}))}/>
-          <input style={{...inp,flex:"2 1 140px"}} placeholder="Date (e.g. June 10, 2026)" value={newGame.date} onChange={e=>setNewGame(g=>({...g,date:e.target.value}))}/>
+          <input style={{...inp,flex:"2 1 140px",colorScheme:"dark"}} type="date" value={newGame.date?new Date(newGame.date).toISOString().split("T")[0]:""} onChange={e=>{if(e.target.value){const d=new Date(e.target.value+"T00:00:00");setNewGame(g=>({...g,date:d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}));}}}/>
           <input style={{...inp,flex:"1 1 100px"}} placeholder="Time" value={newGame.time} onChange={e=>setNewGame(g=>({...g,time:e.target.value}))}/>
           <input style={{...inp,flex:"1 1 80px"}} placeholder="Park" value={newGame.loc} onChange={e=>setNewGame(g=>({...g,loc:e.target.value}))}/>
         </div>
@@ -543,7 +543,7 @@ function EditSeason({teamId,schedule,setSchedule,teamName}){
       <div style={{fontFamily:"'Oswald',sans-serif",fontSize:11,letterSpacing:2,color:C.gold,marginBottom:12}}>{editing!==null?"EDIT GAME":"ADD GAME"}</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
         <input value={form.opp} onChange={upd("opp")} placeholder="Opponent *" style={{...INP,flex:"2 1 150px"}}/>
-        <input value={form.date} onChange={upd("date")} placeholder="Date" style={{...INP,flex:"2 1 140px"}}/>
+        <input value={form.date} onChange={upd("date")} type="date" style={{...INP,flex:"2 1 140px",colorScheme:"dark"}} onBlur={e=>{if(e.target.value){const d=new Date(e.target.value+"T00:00:00");setForm(f=>({...f,date:d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}));}}}/>
         <input value={form.time} onChange={upd("time")} placeholder="Time" style={{...INP,flex:"1 1 100px"}}/>
         <input value={form.loc} onChange={upd("loc")} placeholder="Park/Location" style={{...INP,flex:"1 1 100px"}}/>
       </div>
@@ -1200,7 +1200,8 @@ function getInitials(name){
   return(parts[0][0]+(parts[parts.length-1][0]||"")).toUpperCase();
 }
 
-function Diamond({bases,setBases}){
+function Diamond({bases,setBases,onScored}){
+  // onScored(runnerName) called when a runner is dragged/tapped to home
   const[dragging,setDragging]=useState(null);
   const[dragOver,setDragOver]=useState(null);
   const basePositions={
@@ -1208,16 +1209,37 @@ function Diamond({bases,setBases}){
     third:{top:"50%",left:0,transform:"translateY(-50%) rotate(45deg)"},
     first:{top:"50%",right:0,transform:"translateY(-50%) rotate(45deg)"},
   };
-  const doMove=(from,to)=>{
-    if(from===to)return;
-    setBases(prev=>{const runner=prev[from];const swap=prev[to];return{...prev,[from]:swap||null,[to]:runner};});
+
+  const scoreRunner=(name)=>{
+    // Remove from whichever base they're on
+    setBases(prev=>{
+      const updated={...prev};
+      Object.keys(updated).forEach(b=>{if(updated[b]===name)updated[b]=null;});
+      return updated;
+    });
+    if(onScored)onScored(name);
   };
+
+  const doMove=(from,to)=>{
+    if(from===to){setDragging(null);return;}
+    if(to==="home"){scoreRunner(bases[from]);setDragging(null);return;}
+    setBases(prev=>{const runner=prev[from];const swap=prev[to];return{...prev,[from]:swap||null,[to]:runner};});
+    setDragging(null);
+  };
+
   const handleClick=(b)=>{
     if(dragging){doMove(dragging,b);setDragging(null);}
     else if(bases[b])setDragging(b);
   };
+  const handleHomeClick=()=>{
+    if(dragging){doMove(dragging,"home");setDragging(null);}
+  };
   const handleDragStart=(e,b)=>{if(!bases[b])return;setDragging(b);e.dataTransfer.effectAllowed="move";};
   const handleDrop=(e,b)=>{e.preventDefault();if(dragging)doMove(dragging,b);setDragging(null);setDragOver(null);};
+  const handleHomeDrop=(e)=>{e.preventDefault();if(dragging)doMove(dragging,"home");setDragging(null);setDragOver(null);};
+
+  const homeOver=dragOver==="home";
+
   return <div style={{position:"relative",width:90,height:90,flexShrink:0}} onDragOver={e=>e.preventDefault()}>
     {Object.entries(basePositions).map(([b,s])=>{
       const occ=!!bases[b];
@@ -1229,13 +1251,44 @@ function Diamond({bases,setBases}){
         onDragEnter={()=>setDragOver(b)}
         onDragLeave={()=>setDragOver(v=>v===b?null:v)}
         onDrop={e=>handleDrop(e,b)}
-        title={occ?`${b.toUpperCase()}: ${bases[b]}${dragging&&dragging!==b?" — drop to move":""}`:`${b.toUpperCase()}: empty${dragging?" — drop here":""}`}
-        style={{position:"absolute",width:26,height:26,borderRadius:3,cursor:occ?(sel?"grabbing":"grab"):dragging?"copy":"default",border:`2px solid ${sel?"#fff":over?C.text:occ?C.gold:dragging?C.gold+"66":C.border}`,background:sel?"#fff44":over?C.gold+"55":occ?C.gold:C.bgCard,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.1s",opacity:sel?0.5:1,...s}}>
-        {occ&&<span style={{fontFamily:"'Oswald',sans-serif",fontSize:7,fontWeight:900,color:sel?"#888":"#000",transform:"rotate(-45deg)",lineHeight:1,userSelect:"none",pointerEvents:"none"}}>{getInitials(bases[b])}</span>}
+        title={occ?`${b.toUpperCase()}: ${bases[b]}`:`${b.toUpperCase()}: empty`}
+        style={{position:"absolute",width:26,height:26,borderRadius:3,cursor:occ?(sel?"grabbing":"grab"):dragging?"copy":"default",border:`2px solid ${sel?"#fff":over?C.text:occ?C.gold:dragging?C.gold+"66":C.border}`,background:sel?"#fff4":over?C.gold+"55":occ?C.gold:C.bgCard,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.1s",opacity:sel?0.5:1,...s}}>
+        {occ&&<span style={{fontFamily:"'Oswald',sans-serif",fontSize:8,fontWeight:900,color:sel?"#888":"#000",transform:"rotate(-45deg)",lineHeight:1,userSelect:"none",pointerEvents:"none"}}>{getInitials(bases[b])}</span>}
       </div>;
     })}
-    <div style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:16,height:16,background:C.border,borderRadius:2,border:`2px solid ${C.textDim}`}}/>
-    {dragging&&<div style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontFamily:"'Oswald',sans-serif",fontSize:8,color:C.gold,whiteSpace:"nowrap",letterSpacing:1,pointerEvents:"none"}}>TAP BASE TO MOVE</div>}
+    {/* Home plate — tap target when dragging */}
+    <div
+      onClick={handleHomeClick}
+      onDragEnter={()=>setDragOver("home")}
+      onDragLeave={()=>setDragOver(v=>v==="home"?null:v)}
+      onDrop={handleHomeDrop}
+      title={dragging?"Drop here to score runner":"Home plate"}
+      style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:16,height:16,background:homeOver?C.green:C.border,borderRadius:2,border:`2px solid ${homeOver?C.green:dragging?C.green+"88":C.textDim}`,cursor:dragging?"copy":"default",transition:"all 0.15s"}}/>
+    {dragging&&<div style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontFamily:"'Oswald',sans-serif",fontSize:8,color:C.gold,whiteSpace:"nowrap",letterSpacing:1,pointerEvents:"none"}}>TAP HOME TO SCORE</div>}
+  </div>;
+}
+
+
+function ManualRbiModal({runner, active, currentInning, onConfirm}){
+  // Show list of batters who have an AB this inning — pick who gets the RBI
+  const candidates=active.filter(p=>p.atBats.some(a=>a.inning===currentInning));
+  return <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"center",justifyContent:"center",zIndex:350}}>
+    <div style={{background:C.bgCard,borderRadius:20,padding:28,width:320,border:`2px solid ${C.gold}`,textAlign:"center"}}>
+      <div style={{fontSize:28,marginBottom:8}}>🏅</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:18,color:C.text,marginBottom:4}}>RBI CREDIT</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.textMid,marginBottom:16}}>{runner.split(" ")[0]} scored — who gets the RBI?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        {candidates.map(p=>(
+          <button key={p.name} onClick={()=>onConfirm(p.name)}
+            style={{background:C.bgRow,border:`2px solid ${C.border}`,color:C.text,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:14,textAlign:"left"}}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.gold+"33";e.currentTarget.style.borderColor=C.gold;}}
+            onMouseLeave={e=>{e.currentTarget.style.background=C.bgRow;e.currentTarget.style.borderColor=C.border;}}>
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <button onClick={()=>onConfirm(null)} style={{...BTN(C.bgRow,C.textDim),width:"100%",padding:"9px",fontSize:13}}>No RBI (unearned)</button>
+    </div>
   </div>;
 }
 
@@ -1295,6 +1348,7 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
   const[rbiPrompt,setRbiPrompt]=useState(null);
   const[dpPrompt,setDpPrompt]=useState(false);
   const[fcPrompt,setFcPrompt]=useState(false);
+  const[manualRbiPrompt,setManualRbiPrompt]=useState(null); // {runner, scored already}
   const outs=countOuts(lineup,currentInning);
   const us=totalScore(innings,"us"),them=totalScore(innings,"them");
 
@@ -1354,6 +1408,36 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
       }),300);
     }
   },[active,currentBatter,currentInning,outs,bases]);
+
+  const onRunnerScored=useCallback((runnerName)=>{
+    // Mark the runner's most recent at-bat in this inning as scored
+    setLineup(prev=>prev.map(p=>{
+      if(p.name!==runnerName)return p;
+      let done=false;
+      return{...p,atBats:[...p.atBats].reverse().map(a=>{
+        if(!done&&a.inning===currentInning&&!a.scored){done=true;return{...a,scored:true};}
+        return a;
+      }).reverse()};
+    }));
+    setToast({names:[runnerName]});
+    // Prompt for RBI — ask which active batter gets credit
+    setManualRbiPrompt({runner:runnerName});
+  },[currentInning]);
+
+  const confirmManualRbi=useCallback((batterName)=>{
+    if(!batterName){setManualRbiPrompt(null);return;}
+    // Add 1 RBI to the most recent at-bat of the selected batter
+    setLineup(prev=>prev.map(p=>{
+      if(p.name!==batterName)return p;
+      const abs=[...p.atBats];
+      // find last AB in current inning
+      for(let i=abs.length-1;i>=0;i--){
+        if(abs[i].inning===currentInning){abs[i]={...abs[i],rbi:(abs[i].rbi||0)+1};break;}
+      }
+      return{...p,atBats:abs};
+    }));
+    setManualRbiPrompt(null);
+  },[currentInning]);
 
   const confirmFC=useCallback((outBase)=>{
     const bat=active[currentBatter];if(!bat)return;
@@ -1474,51 +1558,54 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
     {rbiPrompt&&<RBIModal name={rbiPrompt.name} onConfirm={confirmRBI}/>}
     {toast&&<Toast names={toast.names} onDone={()=>setToast(null)}/>}
     {dpPrompt&&bat&&<DPModal batter={bat.name} bases={bases} onConfirm={confirmDP} onClose={()=>setDpPrompt(false)}/>}
-    {fcPrompt&&bat&&<FCModal batter={bat.name} bases={bases} onConfirm={confirmFC} onClose={()=>setFcPrompt(false)}/>}
+    {fcPrompt&&bat&&<FCModal batter={bat.name} bases={bases} onConfirm={confirmFC} onClose={()=>setFcPrompt(false)}/>
+    {manualRbiPrompt&&<ManualRbiModal runner={manualRbiPrompt.runner} active={active} currentInning={currentInning} onConfirm={confirmManualRbi}/>}}
 
     {/* ── Sticky game header ── */}
-    <div style={{position:"sticky",top:107,zIndex:79,background:C.bg,borderBottom:`1px solid ${C.border}44`,paddingBottom:6,paddingTop:6,marginBottom:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"nowrap",overflowX:"auto"}}>
+    <div style={{position:"sticky",top:107,zIndex:79,background:C.bg,borderBottom:`1px solid ${C.border}44`,paddingBottom:8,paddingTop:6,marginBottom:10}}>
 
-        {/* Score — compact */}
+      {/* Row 1: Innings */}
+      <div style={{display:"flex",gap:3,alignItems:"center",paddingBottom:6,borderBottom:`1px solid ${C.border}33`,marginBottom:6,overflowX:"auto"}}>
+        <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:1,flexShrink:0,marginRight:2}}>INN</span>
+        {Array.from({length:TOTAL_INNINGS},(_,i)=>i+1).map(n=>(
+          <button key={n} onClick={()=>{setCurrentInning(n);setBases({first:null,second:null,third:null});}}
+            style={{background:currentInning===n?C.gold:C.bgRow,border:`2px solid ${currentInning===n?C.gold:C.border}`,color:currentInning===n?"#000":C.textMid,borderRadius:5,padding:"3px 8px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:12,flexShrink:0,minWidth:26,textAlign:"center"}}>
+            {n}
+          </button>
+        ))}
+      </div>
+
+      {/* Row 2: Score | Outs stacked | Diamond */}
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+
+        {/* Score */}
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
           <div style={{textAlign:"center"}}>
             <div style={{fontFamily:"'Oswald',sans-serif",fontSize:8,color:C.textDim,letterSpacing:1}}>US</div>
-            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:24,fontWeight:900,color:C.gold,lineHeight:1}}>{us}</div>
+            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:28,fontWeight:900,color:C.gold,lineHeight:1}}>{us}</div>
           </div>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.border}}>—</div>
+          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:14,color:C.border}}>—</div>
           <div style={{textAlign:"center"}}>
             <div style={{fontFamily:"'Oswald',sans-serif",fontSize:8,color:C.textDim,letterSpacing:1}}>THEM</div>
-            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:24,fontWeight:900,color:C.textMid,lineHeight:1}}>{them}</div>
+            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:28,fontWeight:900,color:C.textMid,lineHeight:1}}>{them}</div>
           </div>
         </div>
 
-        <div style={{width:1,height:32,background:C.border,flexShrink:0}}/>
+        <div style={{width:1,height:50,background:C.border,flexShrink:0}}/>
 
-        {/* Inning — compact horizontal */}
-        <div style={{display:"flex",gap:3,alignItems:"center",flexShrink:0}}>
-          <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:1}}>INN</span>
-          {Array.from({length:TOTAL_INNINGS},(_,i)=>i+1).map(n=>(
-            <button key={n} onClick={()=>{setCurrentInning(n);setBases({first:null,second:null,third:null});}}
-              style={{background:currentInning===n?C.gold:C.bgRow,border:`2px solid ${currentInning===n?C.gold:C.border}`,color:currentInning===n?"#000":C.textMid,borderRadius:5,padding:"2px 6px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:11,flexShrink:0,minWidth:22,textAlign:"center"}}>
-              {n}
-            </button>
-          ))}
+        {/* Outs — stacked label above dots */}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flexShrink:0}}>
+          <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:1}}>OUTS</span>
+          <div style={{display:"flex",gap:5}}>
+            {od.map((f,i)=><div key={i} style={{width:13,height:13,borderRadius:"50%",background:f?C.red:"transparent",border:`2px solid ${f?C.red:C.border}`}}/>)}
+          </div>
         </div>
 
-        <div style={{width:1,height:32,background:C.border,flexShrink:0}}/>
+        <div style={{width:1,height:50,background:C.border,flexShrink:0}}/>
 
-        {/* Outs — compact */}
-        <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
-          <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:1}}>OUT</span>
-          {od.map((f,i)=><div key={i} style={{width:11,height:11,borderRadius:"50%",background:f?C.red:"transparent",border:`2px solid ${f?C.red:C.border}`}}/>)}
-        </div>
-
-        <div style={{width:1,height:32,background:C.border,flexShrink:0}}/>
-
-        {/* Diamond — larger, flex-grow to take remaining space */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",flex:1,minWidth:90}}>
-          <Diamond bases={bases} setBases={setBases}/>
+        {/* Diamond — takes remaining space */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",flex:1}}>
+          <Diamond bases={bases} setBases={setBases} onScored={onRunnerScored}/>
         </div>
 
       </div>
