@@ -108,11 +108,16 @@ const OUTCOMES=[
   {key:"3B",label:"Triple",icon:"③",color:"#1e8449"},
   {key:"HR",label:"Home Run",icon:"⌂",color:C.red},
   {key:"BB",label:"Walk",icon:"✦",color:C.gold,noAB:true},
+  {key:"HBP",label:"Hit by Pitch",icon:"🤕",color:C.gold,noAB:true},
   {key:"SAC",label:"Sac Fly",icon:"✈",color:"#9b59b6",noAB:true,isOut:true},
   {key:"K",label:"Strikeout",icon:"✗",color:C.textMid,isOut:true},
   {key:"GO",label:"Ground Out",icon:"↓",color:C.textDim,isOut:true},
   {key:"FO",label:"Fly Out",icon:"↑",color:C.textDim,isOut:true},
   {key:"FLOUT",label:"Foul Out",icon:"⊘",color:C.textDim,isOut:true},
+  {key:"IFF",label:"Infield Fly",icon:"🔺",color:C.textDim,isOut:true},
+  {key:"E",label:"Error",icon:"⚠",color:"#e67e22"},
+  {key:"FC",label:"Fielder's Choice",icon:"⇄",color:"#e67e22",isOut:false,fcOut:true},
+  {key:"DP",label:"Double Play",icon:"⚡⚡",color:"#e67e22",isOut:true,isDP:true},
 ];
 const TOTAL_INNINGS=7,OUTS_PER_INNING=3;
 
@@ -127,16 +132,26 @@ function fmt3(n){return n.toFixed(3).replace(/^0/,"");}
 function calcStats(atBats){
   const o=atBats.map(a=>a.outcome);
   const s1=o.filter(x=>x==="1B").length,s2=o.filter(x=>x==="2B").length,s3=o.filter(x=>x==="3B").length,hr=o.filter(x=>x==="HR").length;
-  const hits=s1+s2+s3+hr,ab=o.filter(x=>!["BB","SAC"].includes(x)).length;
-  const bb=o.filter(x=>x==="BB").length,sac=o.filter(x=>x==="SAC").length,k=o.filter(x=>x==="K").length;
+  const hits=s1+s2+s3+hr;
+  // AB: excludes BB, HBP, SAC (same as real baseball)
+  const ab=o.filter(x=>!["BB","HBP","SAC"].includes(x)).length;
+  const bb=o.filter(x=>x==="BB").length;
+  const hbp=o.filter(x=>x==="HBP").length;
+  const sac=o.filter(x=>x==="SAC").length;
+  const k=o.filter(x=>x==="K").length;
+  const e=o.filter(x=>x==="E").length;
+  const fc=o.filter(x=>x==="FC").length;
   const r=atBats.filter(a=>a.scored).length,rbi=atBats.reduce((s,a)=>s+(a.rbi||0),0);
   const tb=s1+s2*2+s3*3+hr*4;
-  const avg=ab>0?fmt3(hits/ab):".000",obp=(ab+bb+sac)>0?fmt3((hits+bb+sac)/(ab+bb+sac)):".000";
-  const slg=ab>0?fmt3(tb/ab):".000",ops=ab>0?fmt3(parseFloat("0"+obp)+parseFloat("0"+slg)):".000";
-  // GP: count distinct games (innings) this player appeared in
-  const gameInnings=new Set(atBats.map(a=>a.inning));
-  const gp=ab>0||bb>0?1:0; // per-game calc — summed at season level
-  return{ab,hits,singles:s1,doubles:s2,triples:s3,hr,bb,sac,k,r,rbi,tb,avg,obp,slg,ops,gp};
+  const avg=ab>0?fmt3(hits/ab):".000";
+  // OBP: (H + BB + HBP) / (AB + BB + HBP + SAC)
+  const obpNum=hits+bb+hbp+sac;
+  const obpDen=ab+bb+hbp+sac;
+  const obp=obpDen>0?fmt3(obpNum/obpDen):".000";
+  const slg=ab>0?fmt3(tb/ab):".000";
+  const ops=ab>0?fmt3(parseFloat("0"+obp)+parseFloat("0"+slg)):".000";
+  const gp=ab>0||bb>0||hbp>0?1:0;
+  return{ab,hits,singles:s1,doubles:s2,triples:s3,hr,bb,hbp,sac,k,e,fc,r,rbi,tb,avg,obp,slg,ops,gp};
 }
 function totalScore(inn,side){return inn.reduce((s,i)=>s+(parseInt(i[side])||0),0);}
 function emptyInnings(){return Array.from({length:TOTAL_INNINGS},()=>({us:"",them:""}));}
@@ -1178,7 +1193,98 @@ function Badge({k}){const o=OUTCOMES.find(x=>x.key===k);if(!o)return null;return
 function Toast({names,onDone}){useEffect(()=>{const t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[]);return <div style={{position:"fixed",top:80,left:"50%",transform:"translateX(-50%)",background:"#0d2b18",border:`2px solid ${C.green}`,borderRadius:14,padding:"14px 24px",zIndex:400,textAlign:"center",boxShadow:"0 8px 32px #00000088"}}><div style={{fontSize:24,marginBottom:4}}>🏃💨</div><div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:17,color:C.green}}>{names.length===1?"Run scored!":`${names.length} runs scored!`}</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:"#86efac",marginTop:4}}>{names.join(", ")}</div></div>;}
 function InningModal({inning,runs:initRuns,onConfirm}){const[runs,setRuns]=useState(String(initRuns));return <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:320,border:`2px solid ${C.gold}`,textAlign:"center"}}><div style={{fontSize:40,marginBottom:8}}>🔚</div><div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:22,color:C.text,marginBottom:4}}>3 OUTS — END INNING {inning}</div><div style={{fontFamily:"'Oswald',sans-serif",color:C.textMid,fontSize:14,marginBottom:20}}>Runs scored this inning:</div><div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:24}}>{[0,1,2,3,4,5,6,7,8,9,10].map(n=><button key={n} onClick={()=>setRuns(String(n))} style={{background:runs===String(n)?C.gold:C.bgRow,border:`2px solid ${runs===String(n)?C.gold:C.border}`,color:runs===String(n)?"#000":C.textMid,borderRadius:8,width:38,height:38,cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:16}}>{n}</button>)}</div><button onClick={()=>onConfirm(parseInt(runs)||0)} style={{...BTN(C.gold,"#000"),width:"100%",padding:13,fontSize:16}}>✓ Log & Next Inning</button></div></div>;}
 function RBIModal({name,onConfirm}){return <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:320,border:`2px solid ${C.gold}`,textAlign:"center"}}><div style={{fontSize:36,marginBottom:8}}>🏅</div><div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:C.text,marginBottom:4}}>RBIs FOR THIS AT-BAT?</div><div style={{fontFamily:"'Oswald',sans-serif",color:C.textMid,fontSize:13,marginBottom:20}}>{name}</div><div style={{display:"flex",gap:8,justifyContent:"center"}}>{[0,1,2,3,4].map(n=><button key={n} onClick={()=>onConfirm(n)} style={{background:C.bgRow,border:`2px solid ${C.border}`,color:C.textMid,borderRadius:8,width:52,height:52,cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:22}} onMouseEnter={e=>{e.currentTarget.style.background=C.gold+"33";e.currentTarget.style.borderColor=C.gold;e.currentTarget.style.color=C.gold;}} onMouseLeave={e=>{e.currentTarget.style.background=C.bgRow;e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textMid;}}>{n}</button>)}</div></div></div>;}
-function Diamond({bases,onToggle}){const sp=[{b:"second",s:{top:0,left:"50%",transform:"translateX(-50%) rotate(45deg)"},l:"2B"},{b:"third",s:{top:"50%",left:0,transform:"translateY(-50%) rotate(45deg)"},l:"3B"},{b:"first",s:{top:"50%",right:0,transform:"translateY(-50%) rotate(45deg)"},l:"1B"}];return <div style={{position:"relative",width:60,height:60,flexShrink:0}}>{sp.map(({b,s,l})=>{const occ=!!bases[b];return <div key={b} onClick={()=>onToggle(b)} title={occ?`${l}: ${bases[b]}`:`${l}: empty`} style={{position:"absolute",width:20,height:20,borderRadius:3,cursor:"pointer",border:`2px solid ${occ?C.gold:C.border}`,background:occ?C.gold:C.bgCard,...s}}/>;})}<div style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:14,height:14,background:C.border,borderRadius:2,border:`2px solid ${C.textDim}`}}/></div>;}
+function getInitials(name){
+  if(!name)return"";
+  const parts=name.trim().split(" ").filter(Boolean);
+  if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
+  return(parts[0][0]+(parts[parts.length-1][0]||"")).toUpperCase();
+}
+
+function Diamond({bases,setBases}){
+  const[dragging,setDragging]=useState(null);
+  const[dragOver,setDragOver]=useState(null);
+  const basePositions={
+    second:{top:0,left:"50%",transform:"translateX(-50%) rotate(45deg)"},
+    third:{top:"50%",left:0,transform:"translateY(-50%) rotate(45deg)"},
+    first:{top:"50%",right:0,transform:"translateY(-50%) rotate(45deg)"},
+  };
+  const doMove=(from,to)=>{
+    if(from===to)return;
+    setBases(prev=>{const runner=prev[from];const swap=prev[to];return{...prev,[from]:swap||null,[to]:runner};});
+  };
+  const handleClick=(b)=>{
+    if(dragging){doMove(dragging,b);setDragging(null);}
+    else if(bases[b])setDragging(b);
+  };
+  const handleDragStart=(e,b)=>{if(!bases[b])return;setDragging(b);e.dataTransfer.effectAllowed="move";};
+  const handleDrop=(e,b)=>{e.preventDefault();if(dragging)doMove(dragging,b);setDragging(null);setDragOver(null);};
+  return <div style={{position:"relative",width:72,height:72,flexShrink:0}} onDragOver={e=>e.preventDefault()}>
+    {Object.entries(basePositions).map(([b,s])=>{
+      const occ=!!bases[b];
+      const sel=dragging===b;
+      const over=dragOver===b;
+      return <div key={b} draggable={occ}
+        onClick={()=>handleClick(b)}
+        onDragStart={e=>handleDragStart(e,b)}
+        onDragEnter={()=>setDragOver(b)}
+        onDragLeave={()=>setDragOver(v=>v===b?null:v)}
+        onDrop={e=>handleDrop(e,b)}
+        title={occ?`${b.toUpperCase()}: ${bases[b]}${dragging&&dragging!==b?" — drop to move":""}`:`${b.toUpperCase()}: empty${dragging?" — drop here":""}`}
+        style={{position:"absolute",width:22,height:22,borderRadius:3,cursor:occ?(sel?"grabbing":"grab"):dragging?"copy":"default",border:`2px solid ${sel?"#fff":over?C.text:occ?C.gold:dragging?C.gold+"66":C.border}`,background:sel?"#fff44":over?C.gold+"55":occ?C.gold:C.bgCard,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.1s",opacity:sel?0.5:1,...s}}>
+        {occ&&<span style={{fontFamily:"'Oswald',sans-serif",fontSize:7,fontWeight:900,color:sel?"#888":"#000",transform:"rotate(-45deg)",lineHeight:1,userSelect:"none",pointerEvents:"none"}}>{getInitials(bases[b])}</span>}
+      </div>;
+    })}
+    <div style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:14,height:14,background:C.border,borderRadius:2,border:`2px solid ${C.textDim}`}}/>
+    {dragging&&<div style={{position:"absolute",top:-16,left:"50%",transform:"translateX(-50%)",fontFamily:"'Oswald',sans-serif",fontSize:8,color:C.gold,whiteSpace:"nowrap",letterSpacing:1,pointerEvents:"none"}}>TAP BASE TO MOVE</div>}
+  </div>;
+}
+
+function FCModal({batter, bases, onConfirm, onClose}){
+  // Fielder's Choice: batter reaches 1st, user picks which runner is out
+  const runners=Object.entries(bases).filter(([,v])=>v).map(([base,name])=>({base,name}));
+  const[sel,setSel]=useState(null);
+  return <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+    <div style={{background:C.bgCard,borderRadius:20,padding:28,width:320,border:`2px solid ${C.gold}`,textAlign:"center"}}>
+      <div style={{fontSize:32,marginBottom:8}}>⇄</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:C.text,marginBottom:4}}>FIELDER'S CHOICE</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.textMid,marginBottom:6}}>{batter} reaches 1st</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,color:C.textDim,marginBottom:16}}>Which runner is put out?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+        {runners.map(r=>{const active=sel===r.base;return <button key={r.base} onClick={()=>setSel(r.base)} style={{background:active?C.gold+"33":C.bgRow,border:`2px solid ${active?C.gold:C.border}`,color:active?C.gold:C.text,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:14,textAlign:"left"}}>
+          {active?"✓ ":""}{r.base.toUpperCase()}: {r.name.split(" ").pop()}
+        </button>;})}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onClose} style={{...BTN(C.bgRow,C.textMid),flex:1,padding:"10px"}}>Cancel</button>
+        <button onClick={()=>sel&&onConfirm(sel)} disabled={!sel} style={{...BTN(sel?C.gold:C.bgRow,sel?"#000":C.textDim),flex:2,padding:"10px",opacity:sel?1:0.5}}>Confirm</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function DPModal({batter, bases, onConfirm, onClose}){
+  // User selects exactly 2 players to be retired
+  const runners=Object.entries(bases).filter(([,v])=>v).map(([base,name])=>({base,name}));
+  const options=[{id:"batter",label:`Batter: ${batter}`},...runners.map(r=>({id:r.base,label:`${r.base.toUpperCase()}: ${r.name.split(" ").pop()}`}))];
+  const[sel,setSel]=useState([]);
+  const toggle=id=>setSel(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id].slice(-2));
+  return <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+    <div style={{background:C.bgCard,borderRadius:20,padding:28,width:320,border:`2px solid ${C.gold}`,textAlign:"center"}}>
+      <div style={{fontSize:32,marginBottom:8}}>⚡⚡</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:C.text,marginBottom:4}}>DOUBLE PLAY</div>
+      <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.textMid,marginBottom:20}}>Select 2 players who are out</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+        {options.map(o=>{const active=sel.includes(o.id);return <button key={o.id} onClick={()=>toggle(o.id)} style={{background:active?C.gold+"33":C.bgRow,border:`2px solid ${active?C.gold:C.border}`,color:active?C.gold:C.text,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:14,textAlign:"left"}}>
+          {active?"✓ ":""}{o.label}
+        </button>;})}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onClose} style={{...BTN(C.bgRow,C.textMid),flex:1,padding:"10px"}}>Cancel</button>
+        <button onClick={()=>sel.length===2&&onConfirm(sel)} disabled={sel.length!==2} style={{...BTN(sel.length===2?C.gold:C.bgRow,sel.length===2?"#000":C.textDim),flex:2,padding:"10px",opacity:sel.length===2?1:0.5}}>Confirm ({sel.length}/2)</button>
+      </div>
+    </div>
+  </div>;
+}
 
 function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,setCurrentInning,innings,setInnings}){
   const active=lineup.filter(p=>p.active);
@@ -1187,34 +1293,230 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
   const[pendRuns,setPendRuns]=useState(0);
   const[toast,setToast]=useState(null);
   const[rbiPrompt,setRbiPrompt]=useState(null);
+  const[dpPrompt,setDpPrompt]=useState(false);
+  const[fcPrompt,setFcPrompt]=useState(false);
   const outs=countOuts(lineup,currentInning);
+  const us=totalScore(innings,"us"),them=totalScore(innings,"them");
+
+  const anyOnBase=!!(bases.first||bases.second||bases.third);
+  const runnersOnBase=Object.values(bases).filter(Boolean).length;
+
   const markScored=useCallback((snap,names,inn)=>snap.map(p=>{if(!names.includes(p.name))return p;let done=false;return{...p,atBats:[...p.atBats].reverse().map(a=>{if(!done&&a.inning===inn&&!a.scored){done=true;return{...a,scored:true};}return a;}).reverse()};}),[] );
   const togScored=(n,i)=>setLineup(prev=>prev.map(p=>p.name===n?{...p,atBats:p.atBats.map((a,x)=>x===i?{...a,scored:!a.scored}:a)}:p));
   const remAB=(n,i)=>setLineup(prev=>prev.map(p=>p.name===n?{...p,atBats:p.atBats.filter((_,x)=>x!==i)}:p));
-  const nextBatter=useCallback((outDef)=>{setCurrentBatter(prev=>(prev+1)%active.length);if(outDef?.isOut&&outs+1>=OUTS_PER_INNING){setTimeout(()=>setLineup(snap=>{const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);setPendRuns(r);setShowInn(true);return snap;}),300);}},[active.length,outs,currentInning]);
-  const confirmRBI=useCallback((rbi)=>{if(!rbiPrompt)return;const{idx,name,newBases,scored,outDef}=rbiPrompt;setLineup(prev=>{let n=prev.map(p=>p.name===name?{...p,atBats:p.atBats.map((a,i)=>i===idx?{...a,rbi}:a)}:p);if(scored.length)n=markScored(n,scored,currentInning);return n;});setBases(newBases);if(scored.length)setToast({names:scored});setRbiPrompt(null);nextBatter(outDef);},[rbiPrompt,currentInning,markScored,nextBatter]);
-  const logOutcome=useCallback((key)=>{const bat=active[currentBatter];if(!bat)return;const outDef=OUTCOMES.find(o=>o.key===key);const{newBases,scored}=advanceBases(bases,key,bat.name);const skipRBI=["K","FO","FLOUT"].includes(key);setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:key,scored:false,rbi:0}]}:p));if(skipRBI){setBases(newBases);if(scored.length){setLineup(prev=>markScored(prev,scored,currentInning));setToast({names:scored});}nextBatter(outDef);}else{const idx=lineup.find(p=>p.name===bat.name)?.atBats.length??0;setRbiPrompt({name:bat.name,idx,newBases,scored,outDef});}},[active,currentBatter,currentInning,outs,bases,markScored,nextBatter,lineup]);
 
-  function advanceBases(bases,outcome,bn){let{first:f,second:s,third:t}=bases,scored=[];if(outcome==="HR"){scored=[t,s,f,bn].filter(Boolean);return{newBases:{first:null,second:null,third:null},scored};}if(outcome==="3B"){scored=[t,s,f].filter(Boolean);return{newBases:{first:null,second:null,third:bn},scored};}if(outcome==="2B"){scored=[t,s,f].filter(Boolean);return{newBases:{first:null,second:bn,third:null},scored};}if(outcome==="1B"){scored=[t,s].filter(Boolean);return{newBases:{first:bn,second:null,third:f||null},scored};}if(outcome==="BB"){if(f&&s&&t){scored=[t];return{newBases:{first:bn,second:f,third:s},scored};}if(f&&s)return{newBases:{first:bn,second:f,third:s},scored:[]};if(f)return{newBases:{first:bn,second:f,third:t},scored:[]};return{newBases:{first:bn,second:s,third:t},scored:[]};}if(outcome==="SAC"){if(t)scored=[t];return{newBases:{first:f,second:s,third:null},scored};}return{newBases:bases,scored:[]};}
+  const checkInningEnd=useCallback((extraOuts=0)=>{
+    if(outs+extraOuts>=OUTS_PER_INNING){
+      setTimeout(()=>setLineup(snap=>{
+        const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);
+        setPendRuns(r);setShowInn(true);return snap;
+      }),300);
+    }
+  },[outs,currentInning]);
+
+  const nextBatter=useCallback((outDef,extraOuts=0)=>{
+    setCurrentBatter(prev=>(prev+1)%active.length);
+    if(outDef?.isOut) checkInningEnd(extraOuts);
+  },[active.length,checkInningEnd]);
+
+  const confirmRBI=useCallback((rbi)=>{
+    if(!rbiPrompt)return;
+    const{idx,name,newBases,scored,outDef}=rbiPrompt;
+    setLineup(prev=>{let n=prev.map(p=>p.name===name?{...p,atBats:p.atBats.map((a,i)=>i===idx?{...a,rbi}:a)}:p);if(scored.length)n=markScored(n,scored,currentInning);return n;});
+    setBases(newBases);
+    if(scored.length)setToast({names:scored});
+    setRbiPrompt(null);nextBatter(outDef);
+  },[rbiPrompt,currentInning,markScored,nextBatter]);
+
+  const confirmDP=useCallback((selected)=>{
+    const bat=active[currentBatter];if(!bat)return;
+    // Record batter out (AB counts)
+    setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:"DP",scored:false,rbi:0}]}:p));
+    // Remove retired runners from bases
+    const newBases={...bases};
+    if(!selected.includes("batter")){
+      // batter is NOT one of the outs — means batter reached, 2 runners out
+      // batter stays off base for simplicity (hit into DP, batter out is default)
+    }
+    ["first","second","third"].forEach(b=>{
+      if(selected.includes(b))newBases[b]=null;
+    });
+    setBases(newBases);
+    setDpPrompt(false);
+    // 2 outs from DP
+    const outDef={isOut:true};
+    setCurrentBatter(prev=>(prev+1)%active.length);
+    // Check if inning ends (DP adds 2 outs total — current outs + 2)
+    if(outs+2>=OUTS_PER_INNING){
+      setTimeout(()=>setLineup(snap=>{
+        const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);
+        setPendRuns(r);setShowInn(true);return snap;
+      }),300);
+    }
+  },[active,currentBatter,currentInning,outs,bases]);
+
+  const confirmFC=useCallback((outBase)=>{
+    const bat=active[currentBatter];if(!bat)return;
+    // Batter reaches 1st, selected runner is out
+    const{newBases}=advanceBases(bases,"FC",bat.name);
+    newBases[outBase]=null; // remove the put-out runner
+    setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:"FC",scored:false,rbi:0}]}:p));
+    setBases(newBases);
+    setFcPrompt(false);
+    const outDef={isOut:true};
+    nextBatter(outDef);
+  },[active,currentBatter,currentInning,bases,nextBatter]);
+
+  function advanceBases(bases,outcome,bn){
+    let{first:f,second:s,third:t}=bases,scored=[];
+    if(outcome==="HR"){scored=[t,s,f,bn].filter(Boolean);return{newBases:{first:null,second:null,third:null},scored};}
+    if(outcome==="3B"){scored=[t,s,f].filter(Boolean);return{newBases:{first:null,second:null,third:bn},scored};}
+    if(outcome==="2B"){scored=[t,s,f].filter(Boolean);return{newBases:{first:null,second:bn,third:null},scored};}
+    if(outcome==="1B"){scored=[t,s].filter(Boolean);return{newBases:{first:bn,second:null,third:f||null},scored};}
+    // BB and HBP behave identically — force advance
+    if(outcome==="BB"||outcome==="HBP"){
+      if(f&&s&&t){scored=[t];return{newBases:{first:bn,second:f,third:s},scored};}
+      if(f&&s)return{newBases:{first:bn,second:f,third:s},scored:[]};
+      if(f)return{newBases:{first:bn,second:f,third:t},scored:[]};
+      return{newBases:{first:bn,second:s,third:t},scored:[]};
+    }
+    if(outcome==="SAC"){if(t)scored=[t];return{newBases:{first:f,second:s,third:null},scored};}
+    // Error — batter reaches 1st, runners don't advance (simplified)
+    if(outcome==="E"){return{newBases:{first:bn,second:s,third:t},scored:[]};}
+    // Fielder's Choice — batter reaches 1st, one runner is out (handled separately in logOutcome)
+    if(outcome==="FC"){return{newBases:{first:bn,second:s,third:t},scored:[]};}
+    // Infield Fly Rule — batter out, no base changes
+    if(outcome==="IFF"){return{newBases:bases,scored:[]};}
+    return{newBases:bases,scored:[]};
+  }
+
+  const logOutcome=useCallback((key)=>{
+    const bat=active[currentBatter];if(!bat)return;
+    // DP: open modal if >1 runner, auto-out batter+runner if exactly 1 runner
+    if(key==="DP"){
+      if(runnersOnBase>1){setDpPrompt(true);}
+      else if(runnersOnBase===1){
+        // Only 1 runner — batter AND that runner are both out automatically
+        const outBase=Object.entries(bases).find(([,v])=>v)?.[0];
+        const newBases={...bases};
+        if(outBase)newBases[outBase]=null;
+        setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:"DP",scored:false,rbi:0}]}:p));
+        setBases(newBases);
+        setCurrentBatter(prev=>(prev+1)%active.length);
+        if(outs+2>=OUTS_PER_INNING){setTimeout(()=>setLineup(snap=>{const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);setPendRuns(r);setShowInn(true);return snap;}),300);}
+      }
+      return;
+    }
+    // FC: open modal to pick which runner is out
+    if(key==="FC"){setFcPrompt(true);return;}
+    // IFF: batter is out, no base changes, no RBI prompt
+    if(key==="IFF"){
+      setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:"IFF",scored:false,rbi:0}]}:p));
+      nextBatter({isOut:true});
+      return;
+    }
+    const outDef=OUTCOMES.find(o=>o.key===key);
+    const{newBases,scored}=advanceBases(bases,key,bat.name);
+    // HR: auto-calculate RBI as runners scored + batter
+    if(key==="HR"){
+      const autoRBI=scored.length; // scored includes batter already from advanceBases
+      setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:key,scored:false,rbi:autoRBI}]}:p));
+      setBases(newBases);
+      setLineup(prev=>markScored(prev,scored,currentInning));
+      if(scored.length)setToast({names:scored});
+      nextBatter(outDef);
+      return;
+    }
+    const skipRBI=["K","FO","FLOUT","GO","E"].includes(key);
+    setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:key,scored:false,rbi:0}]}:p));
+    if(skipRBI){
+      setBases(newBases);
+      if(scored.length){setLineup(prev=>markScored(prev,scored,currentInning));setToast({names:scored});}
+      nextBatter(outDef);
+    } else {
+      const idx=lineup.find(p=>p.name===bat.name)?.atBats.length??0;
+      setRbiPrompt({name:bat.name,idx,newBases,scored,outDef});
+    }
+  },[active,currentBatter,currentInning,outs,bases,runnersOnBase,markScored,nextBatter,lineup]);
 
   const innConfirm=(r)=>{setInnings(prev=>prev.map((inn,i)=>i===currentInning-1?{...inn,us:String(r)}:inn));if(currentInning<TOTAL_INNINGS)setCurrentInning(currentInning+1);setBases({first:null,second:null,third:null});setShowInn(false);};
+
   const bat=active[currentBatter];
   const od=Array.from({length:OUTS_PER_INNING},(_,i)=>i<outs);
   const ron=[bases.third&&`3B: ${bases.third.split(" ").pop()}`,bases.second&&`2B: ${bases.second.split(" ").pop()}`,bases.first&&`1B: ${bases.first.split(" ").pop()}`].filter(Boolean);
+
   return <div>
     {showInn&&<InningModal inning={currentInning} runs={pendRuns} onConfirm={innConfirm}/>}
     {rbiPrompt&&<RBIModal name={rbiPrompt.name} onConfirm={confirmRBI}/>}
     {toast&&<Toast names={toast.names} onDone={()=>setToast(null)}/>}
-    <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18,background:C.bg,borderRadius:12,padding:"12px 16px",flexWrap:"wrap"}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}><span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:11,letterSpacing:2}}>INN</span>{Array.from({length:TOTAL_INNINGS},(_,i)=>i+1).map(n=><button key={n} onClick={()=>{setCurrentInning(n);setBases({first:null,second:null,third:null});}} style={{background:currentInning===n?C.gold:C.bgRow,border:`2px solid ${currentInning===n?C.gold:C.border}`,color:currentInning===n?"#000":C.textMid,borderRadius:7,padding:"3px 11px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:14}}>{n}</button>)}</div>
-      <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:11,letterSpacing:2}}>OUTS</span>{od.map((f,i)=><div key={i} style={{width:16,height:16,borderRadius:"50%",background:f?C.red:"transparent",border:`2px solid ${f?C.red:C.border}`}}/>)}</div>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginLeft:"auto"}}><div style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textDim,textAlign:"right",lineHeight:1.6}}>{ron.length?ron.map((r,i)=><div key={i}>{r}</div>):<div>bases empty</div>}</div><Diamond bases={bases} onToggle={b=>setBases(prev=>({...prev,[b]:prev[b]?null:prev[b]}))}/></div>
+    {dpPrompt&&bat&&<DPModal batter={bat.name} bases={bases} onConfirm={confirmDP} onClose={()=>setDpPrompt(false)}/>}
+    {fcPrompt&&bat&&<FCModal batter={bat.name} bases={bases} onConfirm={confirmFC} onClose={()=>setFcPrompt(false)}/>}
+
+    {/* ── Sticky game header ── */}
+    <div style={{position:"sticky",top:104,zIndex:80,background:C.bg,borderBottom:`1px solid ${C.border}`,marginBottom:14,paddingBottom:10}}>
+      {/* Score bar */}
+      <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,padding:"8px 0 10px",borderBottom:`1px solid ${C.border}44`,marginBottom:10}}>
+        <div style={{textAlign:"center"}}><div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,color:C.textDim,letterSpacing:2}}>US</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:34,fontWeight:900,color:C.gold,lineHeight:1}}>{us}</div></div>
+        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:18,color:C.border}}>—</div>
+        <div style={{textAlign:"center"}}><div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,color:C.textDim,letterSpacing:2}}>THEM</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:34,fontWeight:900,color:C.textMid,lineHeight:1}}>{them}</div></div>
+        <div style={{width:1,height:40,background:C.border,margin:"0 8px"}}/>
+        {/* Inning selector */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:10,letterSpacing:1,marginRight:2}}>INN</span>
+          {Array.from({length:TOTAL_INNINGS},(_,i)=>i+1).map(n=><button key={n} onClick={()=>{setCurrentInning(n);setBases({first:null,second:null,third:null});}} style={{background:currentInning===n?C.gold:C.bgRow,border:`2px solid ${currentInning===n?C.gold:C.border}`,color:currentInning===n?"#000":C.textMid,borderRadius:6,padding:"2px 9px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:13}}>{n}</button>)}
+        </div>
+        <div style={{width:1,height:40,background:C.border,margin:"0 4px"}}/>
+        {/* Outs */}
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          <span style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:10,letterSpacing:1}}>OUT</span>
+          {od.map((f,i)=><div key={i} style={{width:14,height:14,borderRadius:"50%",background:f?C.red:"transparent",border:`2px solid ${f?C.red:C.border}`}}/>)}
+        </div>
+        <div style={{width:1,height:40,background:C.border,margin:"0 4px"}}/>
+        {/* Bases + runners */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:10,color:C.textDim,textAlign:"right",lineHeight:1.5}}>{ron.length?ron.map((r,i)=><div key={i}>{r}</div>):<div style={{color:C.textDim}}>empty</div>}</div>
+          <Diamond bases={bases} setBases={setBases}/>
+        </div>
+      </div>
     </div>
-    {bat&&<div style={{background:C.bgCard,borderRadius:16,padding:20,marginBottom:18,border:`2px solid ${C.gold}`}}>
-      <div style={{color:C.textMid,fontFamily:"'Oswald',sans-serif",fontSize:11,letterSpacing:3,marginBottom:6}}>NOW BATTING</div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontFamily:"'Oswald',sans-serif",fontSize:26,fontWeight:900,color:C.text}}><span style={{color:C.gold}}>#{currentBatter+1} </span>{bat.name}</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.textMid}}>{bat.atBats.length} PA · {calcStats(bat.atBats).ab} AB</div></div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:10}}>{OUTCOMES.map(o=><button key={o.key} onClick={()=>logOutcome(o.key)} style={{background:o.color+"22",border:`2px solid ${o.color}`,color:o.color,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Oswald',sans-serif",fontSize:13,fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:68,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=o.color+"44"} onMouseLeave={e=>e.currentTarget.style.background=o.color+"22"}><span style={{fontSize:20}}>{o.icon}</span><span>{o.label}</span>{o.noAB&&<span style={{fontSize:9,color:o.color+"99"}}>no AB</span>}</button>)}</div>
+
+    {/* Batter card */}
+    {bat&&<div style={{background:C.bgCard,borderRadius:16,padding:16,marginBottom:14,border:`2px solid ${C.gold}`}}>
+      <div style={{color:C.textMid,fontFamily:"'Oswald',sans-serif",fontSize:10,letterSpacing:3,marginBottom:4}}>NOW BATTING</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:22,fontWeight:900,color:C.text}}><span style={{color:C.gold}}>#{currentBatter+1} </span>{bat.name}</div>
+        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,color:C.textMid}}>{bat.atBats.length} PA · {calcStats(bat.atBats).ab} AB</div>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {OUTCOMES.map(o=>{
+          // SAC disabled if 2 outs or no runners on base
+          const sacDisabled=(o.key==="SAC"&&(outs>=2||!anyOnBase));
+          // DP disabled if 2 outs OR no runners on base
+          const dpDisabled=(o.key==="DP"&&(outs>=2||!anyOnBase));
+          // FC disabled if no runners on base
+          const fcDisabled=(o.key==="FC"&&!anyOnBase);
+          // IFF disabled if 2 outs (infield fly only applies with <2 outs and runners on 1st+2nd)
+          const iffDisabled=(o.key==="IFF"&&outs>=2);
+          const isDisabled=sacDisabled||dpDisabled||fcDisabled||iffDisabled;
+          // HR: show auto-RBI count as hint
+          const hrHint=o.key==="HR"&&runnersOnBase>0?`${runnersOnBase+1} RBI`:"";
+          // HBP hint
+          const hbpHint=o.key==="HBP"?"like BB":"";
+          return <button key={o.key} onClick={()=>!isDisabled&&logOutcome(o.key)} style={{background:isDisabled?C.bgRow:o.color+"22",border:`2px solid ${isDisabled?C.border:o.color}`,color:isDisabled?C.textDim:o.color,borderRadius:10,padding:"9px 12px",cursor:isDisabled?"not-allowed":"pointer",fontFamily:"'Oswald',sans-serif",fontSize:12,fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:2,minWidth:62,opacity:isDisabled?0.35:1,transition:"background 0.15s"}} onMouseEnter={e=>{if(!isDisabled)e.currentTarget.style.background=o.color+"44";}} onMouseLeave={e=>{if(!isDisabled)e.currentTarget.style.background=o.color+"22";}}>
+            <span style={{fontSize:18}}>{o.icon}</span>
+            <span>{o.label}</span>
+            {o.noAB&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>no AB</span>}
+            {hrHint&&<span style={{fontSize:8,color:C.gold+"cc"}}>{hrHint}</span>}
+            {hbpHint&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>{hbpHint}</span>}
+            {o.key==="DP"&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>2 outs</span>}
+            {o.key==="IFF"&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>batter out</span>}
+            {o.key==="FC"&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>reaches 1st</span>}
+            {o.key==="E"&&<span style={{fontSize:8,color:isDisabled?C.textDim:o.color+"99"}}>reaches base</span>}
+          </button>;
+        })}
+      </div>
     </div>}
+
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
       {active.map((p,i)=>{const iABs=p.atBats.map((a,gi)=>({...a,gi})).filter(a=>a.inning===currentInning);const isUp=i===currentBatter,onBase=bases.first===p.name||bases.second===p.name||bases.third===p.name;const bl=bases.third===p.name?"3B":bases.second===p.name?"2B":bases.first===p.name?"1B":null;const st=calcStats(p.atBats);
       return <div key={p.name} onClick={()=>setCurrentBatter(i)} style={{background:isUp?C.bgRow:C.bgCard,border:`2px solid ${isUp?C.gold:onBase?C.gold+"33":C.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",cursor:"pointer"}}>
@@ -1228,6 +1530,7 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
     <p style={{color:C.textDim,fontFamily:"'Oswald',sans-serif",fontSize:11,marginTop:10,textAlign:"center"}}>Tap □ beside any at-bat to manually toggle a run scored.</p>
   </div>;
 }
+
 
 // ── In-game stats ──────────────────────────────────────────────────────────
 function Stats({lineup}){
