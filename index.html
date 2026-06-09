@@ -1558,8 +1558,8 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
     {rbiPrompt&&<RBIModal name={rbiPrompt.name} onConfirm={confirmRBI}/>}
     {toast&&<Toast names={toast.names} onDone={()=>setToast(null)}/>}
     {dpPrompt&&bat&&<DPModal batter={bat.name} bases={bases} onConfirm={confirmDP} onClose={()=>setDpPrompt(false)}/>}
-    {fcPrompt&&bat&&<FCModal batter={bat.name} bases={bases} onConfirm={confirmFC} onClose={()=>setFcPrompt(false)}/>
-    {manualRbiPrompt&&<ManualRbiModal runner={manualRbiPrompt.runner} active={active} currentInning={currentInning} onConfirm={confirmManualRbi}/>}}
+    {fcPrompt&&bat&&<FCModal batter={bat.name} bases={bases} onConfirm={confirmFC} onClose={()=>setFcPrompt(false)}/>}
+    {manualRbiPrompt&&<ManualRbiModal runner={manualRbiPrompt.runner} active={active} currentInning={currentInning} onConfirm={confirmManualRbi}/>}
 
     {/* ── Sticky game header ── */}
     <div style={{position:"sticky",top:107,zIndex:79,background:C.bg,borderBottom:`1px solid ${C.border}44`,marginBottom:10}}>
