@@ -155,7 +155,7 @@ function calcStats(atBats){
 }
 function totalScore(inn,side){return inn.reduce((s,i)=>s+(parseInt(i[side])||0),0);}
 function emptyInnings(){return Array.from({length:TOTAL_INNINGS},()=>({us:"",them:""}));}
-function countOuts(lineup,inning){return lineup.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===inning&&OUTCOMES.find(o=>o.key===a.outcome)?.isOut).length,0);}
+function countOuts(lineup,inning){return lineup.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===inning&&OUTCOMES.find(o=>o.key===a.outcome)?.isOut).reduce((acc,a)=>acc+(a.outcome==="DP"?2:1),0),0);}
 
 // ── CSV parser ─────────────────────────────────────────────────────────────
 function parseScheduleCSV(text, teamName){
@@ -1360,13 +1360,16 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
   const remAB=(n,i)=>setLineup(prev=>prev.map(p=>p.name===n?{...p,atBats:p.atBats.filter((_,x)=>x!==i)}:p));
 
   const checkInningEnd=useCallback((extraOuts=0)=>{
-    if(outs+extraOuts>=OUTS_PER_INNING){
-      setTimeout(()=>setLineup(snap=>{
+    // Compute outs fresh from latest lineup state inside setTimeout to avoid stale closure
+    setTimeout(()=>setLineup(snap=>{
+      const currentOuts=countOuts(snap,currentInning);
+      if(currentOuts+extraOuts>=OUTS_PER_INNING){
         const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);
-        setPendRuns(r);setShowInn(true);return snap;
-      }),300);
-    }
-  },[outs,currentInning]);
+        setPendRuns(r);setShowInn(true);
+      }
+      return snap;
+    }),150);
+  },[currentInning]);
 
   const nextBatter=useCallback((outDef,extraOuts=0)=>{
     setCurrentBatter(prev=>(prev+1)%active.length);
@@ -1397,17 +1400,16 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
     });
     setBases(newBases);
     setDpPrompt(false);
-    // 2 outs from DP
-    const outDef={isOut:true};
     setCurrentBatter(prev=>(prev+1)%active.length);
-    // Check if inning ends (DP adds 2 outs total — current outs + 2)
-    if(outs+2>=OUTS_PER_INNING){
-      setTimeout(()=>setLineup(snap=>{
+    setTimeout(()=>setLineup(snap=>{
+      const currentOuts=countOuts(snap,currentInning);
+      if(currentOuts>=OUTS_PER_INNING){
         const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);
-        setPendRuns(r);setShowInn(true);return snap;
-      }),300);
-    }
-  },[active,currentBatter,currentInning,outs,bases]);
+        setPendRuns(r);setShowInn(true);
+      }
+      return snap;
+    }),150);
+  },[active,currentBatter,currentInning,bases]);
 
   const onRunnerScored=useCallback((runnerName)=>{
     // Mark the runner's most recent at-bat in this inning as scored
@@ -1511,7 +1513,7 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
         setLineup(prev=>prev.map(p=>p.name===bat.name?{...p,atBats:[...p.atBats,{inning:currentInning,outcome:"DP",scored:false,rbi:0}]}:p));
         setBases(newBases);
         setCurrentBatter(prev=>(prev+1)%active.length);
-        if(outs+2>=OUTS_PER_INNING){setTimeout(()=>setLineup(snap=>{const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);setPendRuns(r);setShowInn(true);return snap;}),300);}
+        setTimeout(()=>setLineup(snap=>{const currentOuts=countOuts(snap,currentInning);if(currentOuts>=OUTS_PER_INNING){const r=snap.filter(p=>p.active).reduce((s,p)=>s+p.atBats.filter(a=>a.inning===currentInning&&a.scored).length,0);setPendRuns(r);setShowInn(true);}return snap;}),150);
       }
       return;
     }
@@ -1626,8 +1628,8 @@ function AtBats({lineup,setLineup,currentBatter,setCurrentBatter,currentInning,s
           const dpDisabled=(o.key==="DP"&&(outs>=2||!anyOnBase));
           // FC disabled if no runners on base
           const fcDisabled=(o.key==="FC"&&!anyOnBase);
-          // IFF disabled if 2 outs (infield fly only applies with <2 outs and runners on 1st+2nd)
-          const iffDisabled=(o.key==="IFF"&&outs>=2);
+          // IFF only valid: runners on 1st AND 2nd (or bases loaded), less than 2 outs
+          const iffDisabled=(o.key==="IFF"&&(outs>=2||!bases.first||!bases.second));
           const isDisabled=sacDisabled||dpDisabled||fcDisabled||iffDisabled;
           // HR: show auto-RBI count as hint
           const hrHint=o.key==="HR"&&runnersOnBase>0?`${runnersOnBase+1} RBI`:"";
