@@ -842,6 +842,108 @@ function ImportStatsModal({teamId,seasons,setSeasons,onClose}){
   </div>;
 }
 
+function EditGameModal({game, gameKey, year, teamId, roster, seasons, setSeasons, onClose}){
+  function buildInitial(){
+    const map={};
+    (game.lineup||[]).forEach(p=>{
+      if(!p.name)return;
+      if(p.atBats&&p.atBats.length>0){
+        const o=p.atBats.map(a=>a.outcome);
+        const s1=o.filter(x=>x==="1B").length,s2=o.filter(x=>x==="2B").length,
+              s3=o.filter(x=>x==="3B").length,hr=o.filter(x=>x==="HR").length;
+        map[p.name]={name:p.name,
+          ab:o.filter(x=>!["BB","HBP","SAC"].includes(x)).length,
+          h:s1+s2+s3+hr,s1,s2,s3,hr,
+          bb:o.filter(x=>x==="BB").length,
+          hbp:o.filter(x=>x==="HBP").length,
+          sac:o.filter(x=>x==="SAC").length,
+          k:o.filter(x=>x==="K").length,
+          r:p.atBats.filter(a=>a.scored).length,
+          rbi:p.atBats.reduce((s,a)=>s+(a.rbi||0),0)};
+      } else if(p.stats){
+        map[p.name]={name:p.name,ab:p.stats.ab||0,h:p.stats.h||0,s1:p.stats.singles||0,s2:p.stats.doubles||0,s3:p.stats.triples||0,hr:p.stats.hr||0,bb:p.stats.bb||0,hbp:p.stats.hbp||0,sac:p.stats.sac||0,k:p.stats.k||0,r:p.stats.r||0,rbi:p.stats.rbi||0};
+      } else {
+        map[p.name]={name:p.name,ab:0,h:0,s1:0,s2:0,s3:0,hr:0,bb:0,hbp:0,sac:0,k:0,r:0,rbi:0};
+      }
+    });
+    return map;
+  }
+  const[rows,setRows]=useState(()=>buildInitial());
+  const[scoreUs,setScoreUs]=useState(game.finalUs||"0");
+  const[scoreThem,setScoreThem]=useState(game.finalThem||"0");
+  const[addingPlayer,setAddingPlayer]=useState(false);
+  const missingPlayers=(roster||[]).filter(n=>!rows[n]);
+  const upd=(name,field,val)=>setRows(prev=>({...prev,[name]:{...prev[name],[field]:val===""?"":parseInt(val)||0}}));
+  const addPlayer=name=>{setRows(prev=>({...prev,[name]:{name,ab:0,h:0,s1:0,s2:0,s3:0,hr:0,bb:0,hbp:0,sac:0,k:0,r:0,rbi:0}}));setAddingPlayer(false);};
+  const removePlayer=name=>setRows(prev=>{const u={...prev};delete u[name];return u;});
+  const save=()=>{
+    const newLineup=Object.values(rows).map(r=>({name:r.name,atBats:[],stats:{ab:r.ab||0,h:r.h||0,singles:r.s1||0,doubles:r.s2||0,triples:r.s3||0,hr:r.hr||0,bb:r.bb||0,hbp:r.hbp||0,sac:r.sac||0,k:r.k||0,r:r.r||0,rbi:r.rbi||0}}));
+    const updated={...seasons,[year]:{...seasons[year],[gameKey]:{...game,finalUs:String(scoreUs),finalThem:String(scoreThem),lineup:newLineup}}};
+    setSeasons(updated);tSave(teamId,"seasons",updated);onClose();
+  };
+  const statCols=[{k:"ab",l:"AB"},{k:"h",l:"H"},{k:"s1",l:"1B"},{k:"s2",l:"2B"},{k:"s3",l:"3B"},{k:"hr",l:"HR"},{k:"bb",l:"BB"},{k:"hbp",l:"HBP"},{k:"sac",l:"SAC"},{k:"k",l:"K"},{k:"r",l:"R"},{k:"rbi",l:"RBI"}];
+  const playerList=Object.values(rows);
+  const inp2={background:C.bg,border:"1px solid "+C.border,borderRadius:4,padding:"4px 2px",color:C.text,fontFamily:"'Oswald',sans-serif",fontSize:12,textAlign:"center",width:36};
+  return <div style={{position:"fixed",inset:0,background:"#000e",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:500,overflowY:"auto",padding:"16px 8px"}}>
+    <div style={{background:C.bgCard,borderRadius:20,padding:20,width:"100%",maxWidth:900,border:"2px solid "+C.gold+"44"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:C.gold}}>EDIT GAME STATS</div>
+          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,color:C.textMid,marginTop:2}}>vs {game.opp} · {game.date}</div>
+        </div>
+        <button onClick={onClose} style={{...BTN(C.bgRow,C.textMid),padding:"6px 14px",fontSize:13}}>✕ Cancel</button>
+      </div>
+      <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontFamily:"'Oswald',sans-serif",fontSize:11,color:C.textDim,letterSpacing:2}}>FINAL SCORE</span>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,color:C.textDim,marginBottom:2}}>US</div>
+            <input value={scoreUs} onChange={e=>setScoreUs(e.target.value.replace(/[^0-9]/g,""))} style={{...inp2,width:48,fontSize:20,fontWeight:900,color:C.gold,padding:"6px 4px"}}/>
+          </div>
+          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:18,color:C.border}}>—</div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,color:C.textDim,marginBottom:2}}>THEM</div>
+            <input value={scoreThem} onChange={e=>setScoreThem(e.target.value.replace(/[^0-9]/g,""))} style={{...inp2,width:48,fontSize:20,fontWeight:900,color:C.textMid,padding:"6px 4px"}}/>
+          </div>
+        </div>
+      </div>
+      <div style={{overflowX:"auto",marginBottom:16}}>
+        <table style={{borderCollapse:"collapse",width:"100%",minWidth:700}}>
+          <thead><tr>
+            <th style={{...TH("left"),minWidth:120}}>PLAYER</th>
+            {statCols.map(c=><th key={c.k} style={TH()}>{c.l}</th>)}
+            <th style={TH()}></th>
+          </tr></thead>
+          <tbody>{playerList.map((p,i)=>(
+            <tr key={p.name} style={{background:i%2===0?C.bgCard:C.bgRow}}>
+              <td style={{...TD("left"),paddingLeft:10,fontFamily:"'Oswald',sans-serif",fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap"}}>{p.name}</td>
+              {statCols.map(c=><td key={c.k} style={{padding:"4px 3px",borderBottom:"1px solid "+C.border}}>
+                <input value={p[c.k]===0?"0":p[c.k]||""} onChange={e=>upd(p.name,c.k,e.target.value)} onFocus={e=>e.target.select()}
+                  style={{...inp2,color:c.k==="hr"&&(p[c.k]||0)>0?C.red:c.k==="r"&&(p[c.k]||0)>0?C.green:c.k==="rbi"&&(p[c.k]||0)>0?C.gold:C.text}}/>
+              </td>)}
+              <td style={{padding:"4px 3px",borderBottom:"1px solid "+C.border}}>
+                <button onClick={()=>removePlayer(p.name)} style={{...BTN(C.bg,C.red),border:"1px solid "+C.border,fontSize:11,padding:"3px 8px"}}>✕</button>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {missingPlayers.length>0&&<div style={{marginBottom:16}}>
+        {!addingPlayer
+          ?<button onClick={()=>setAddingPlayer(true)} style={{...BTN(C.bgRow,C.textMid),fontSize:13,padding:"8px 16px"}}>+ Add Player from Roster</button>
+          :<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {missingPlayers.map(n=><button key={n} onClick={()=>addPlayer(n)} style={{...BTN(C.bgRow,C.gold),border:"1px solid "+C.gold+"44",fontSize:13,padding:"7px 14px"}}>{n}</button>)}
+            <button onClick={()=>setAddingPlayer(false)} style={{...BTN(C.bg,C.textDim),fontSize:13,padding:"7px 14px"}}>Cancel</button>
+          </div>}
+      </div>}
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onClose} style={{...BTN(C.bgRow,C.textMid),flex:1,padding:"12px",fontSize:14}}>Cancel</button>
+        <button onClick={save} style={{...BTN(C.gold,"#000"),flex:2,padding:"12px",fontSize:15}}>Save Changes</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function SortableStatsTable({players,label,showImportedNote}){
   const[sortCol,setSortCol]=useState("ops");
   const[sortDir,setSortDir]=useState("desc");
@@ -918,12 +1020,13 @@ function SortableStatsTable({players,label,showImportedNote}){
   </div>;
 }
 
-function SeasonSummary({teamId,seasons,setSeasons}){
+function SeasonSummary({teamId,seasons,setSeasons,roster}){
   const allYears=Object.keys(seasons).sort((a,b)=>b-a);
   const currentYear=new Date().getFullYear().toString();
   const[viewYear,setViewYear]=useState(allYears.includes(currentYear)?currentYear:(allYears[0]||null));
   const[tab,setTab]=useState("season");
   const[showImport,setShowImport]=useState(false);
+  const[editGame,setEditGame]=useState(null); // {game, gameKey, year}
 
   function aggregateGames(gameList, importedMap, importedRecord){
     let wins=importedRecord?importedRecord.wins:0;
@@ -937,16 +1040,54 @@ function SeasonSummary({teamId,seasons,setSeasons}){
       runsFor+=us;runsAgainst+=them;
       if(us>them)wins++;else if(them>us)losses++;else ties++;
       (g.lineup||[]).forEach(p=>{
-        if(!playerMap[p.name])playerMap[p.name]={name:p.name,atBats:[],gpCount:0};
-        const abs=p.atBats||[];
-        // Count this game if player had any AB or BB
-        const hadPA=abs.some(a=>a.outcome);
-        if(hadPA)playerMap[p.name].gpCount++;
-        playerMap[p.name].atBats=[...playerMap[p.name].atBats,...abs];
+        if(!playerMap[p.name])playerMap[p.name]={name:p.name,atBats:[],gpCount:0,summaryStats:null};
+        if(p.stats){
+          // summary format from manual edit — accumulate directly
+          const s=p.stats;
+          if(!playerMap[p.name].summaryStats)playerMap[p.name].summaryStats={ab:0,hits:0,singles:0,doubles:0,triples:0,hr:0,bb:0,hbp:0,sac:0,k:0,r:0,rbi:0,gp:0};
+          const ss=playerMap[p.name].summaryStats;
+          if((s.ab||0)>0||(s.bb||0)>0)ss.gp++;
+          ss.ab+=(s.ab||0);ss.hits+=(s.h||0);ss.singles+=(s.singles||0);ss.doubles+=(s.doubles||0);
+          ss.triples+=(s.triples||0);ss.hr+=(s.hr||0);ss.bb+=(s.bb||0);ss.hbp+=(s.hbp||0);
+          ss.sac+=(s.sac||0);ss.k+=(s.k||0);ss.r+=(s.r||0);ss.rbi+=(s.rbi||0);
+        } else {
+          const abs=p.atBats||[];
+          const hadPA=abs.some(a=>a.outcome);
+          if(hadPA)playerMap[p.name].gpCount++;
+          playerMap[p.name].atBats=[...playerMap[p.name].atBats,...abs];
+        }
       });
     });
     // Calc stats from at-bats
-    let players=Object.values(playerMap).filter(p=>p.atBats.length>0).map(p=>({name:p.name,...calcStats(p.atBats),gp:p.gpCount||1}));
+    let players=Object.values(playerMap).filter(p=>p.atBats.length>0||p.summaryStats).map(p=>{
+      if(p.summaryStats&&p.atBats.length===0){
+        // pure summary — compute rates
+        const ss=p.summaryStats;
+        const tb=(ss.singles||0)+(ss.doubles||0)*2+(ss.triples||0)*3+(ss.hr||0)*4;
+        const avg=ss.ab>0?fmt3(ss.hits/ss.ab):".000";
+        const obpD=ss.ab+ss.bb+ss.hbp+ss.sac;
+        const obp=obpD>0?fmt3((ss.hits+ss.bb+ss.hbp+ss.sac)/obpD):".000";
+        const slg=ss.ab>0?fmt3(tb/ss.ab):".000";
+        const ops=ss.ab>0?fmt3(parseFloat("0"+obp)+parseFloat("0"+slg)):".000";
+        return{name:p.name,...ss,tb,avg,obp,slg,ops,gp:ss.gp||1};
+      }
+      const base={name:p.name,...calcStats(p.atBats),gp:p.gpCount||1};
+      if(p.summaryStats){
+        // merge at-bat stats with summary stats from edited games
+        const ss=p.summaryStats;
+        base.ab+=(ss.ab||0);base.hits+=(ss.hits||0);base.singles+=(ss.singles||0);
+        base.doubles+=(ss.doubles||0);base.triples+=(ss.triples||0);base.hr+=(ss.hr||0);
+        base.bb+=(ss.bb||0);base.sac+=(ss.sac||0);base.k+=(ss.k||0);
+        base.r+=(ss.r||0);base.rbi+=(ss.rbi||0);base.gp+=(ss.gp||0);
+        const tb=base.singles+base.doubles*2+base.triples*3+base.hr*4;
+        base.avg=base.ab>0?fmt3(base.hits/base.ab):".000";
+        const obpD=base.ab+base.bb+base.sac;
+        base.obp=obpD>0?fmt3((base.hits+base.bb+base.sac)/obpD):".000";
+        base.slg=base.ab>0?fmt3(tb/base.ab):".000";
+        base.ops=base.ab>0?fmt3(parseFloat("0"+base.obp)+parseFloat("0"+base.slg)):".000";
+      }
+      return base;
+    });
     // Merge imported stats — if player exists in both, sum the raw counting stats
     if(importedMap){
       Object.values(importedMap).forEach(imp=>{
@@ -1056,7 +1197,8 @@ function SeasonSummary({teamId,seasons,setSeasons}){
   );
 
   return <div>
-    {showImport&&<ImportStatsModal teamId={teamId} seasons={seasons} setSeasons={setSeasons} onClose={()=>setShowImport(false)}/>}
+    {showImport&&<ImportStatsModal teamId={teamId} seasons={seasons} setSeasons={setSeasons} onClose={()=>setShowImport(false)}/>
+    {editGame&&<EditGameModal game={editGame.game} gameKey={editGame.gameKey} year={editGame.year} teamId={teamId} roster={roster} seasons={seasons} setSeasons={setSeasons} onClose={()=>setEditGame(null)}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
       <h2 style={{fontFamily:"'Oswald',sans-serif",fontSize:20,color:C.text,margin:0,letterSpacing:1}}>SEASON STATISTICS</h2>
       <button onClick={()=>setShowImport(true)} style={{...BTN(C.bgCard,C.gold),border:`1px solid ${C.gold}44`,padding:"9px 18px",fontSize:13}}>📥 Import Past Season</button>
@@ -1110,6 +1252,7 @@ function SeasonSummary({teamId,seasons,setSeasons}){
               <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:rc,minWidth:24}}>{result}</div>
               <div style={{flex:1}}><div style={{fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:14,color:C.text}}>vs {g.opp}</div><div style={{fontFamily:"'Oswald',sans-serif",fontSize:12,color:C.textMid}}>{g.date}{g.loc?` · ${g.loc}`:""}</div></div>
               <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:900,fontSize:20,color:rc}}>{us}–{them}</div>
+              <button onClick={()=>setEditGame({game:g,gameKey:key,year:viewYear})} style={{...BTN(C.bgRow,C.gold),border:"1px solid "+C.gold+"44",fontSize:12,padding:"4px 10px"}}>✏️ Edit</button>
               <button onClick={()=>deleteGame(viewYear,key)} style={{...BTN(C.bg,C.red),border:`1px solid ${C.border}`,fontSize:12,padding:"4px 10px"}}>✕</button>
             </div>;
           })
@@ -1823,7 +1966,7 @@ function App(){
     </div>}
     <div style={{maxWidth:860,margin:"0 auto",padding:`24px 16px ${btmPad}`}}>
       {screen==="schedule"&&<><h2 style={{fontFamily:"'Oswald',sans-serif",fontSize:20,color:C.text,margin:"0 0 20px",letterSpacing:1}}>SCHEDULE</h2><ScheduleView schedule={schedule} onSelect={startGame}/></>}
-      {screen==="season"&&<SeasonSummary teamId={team?.teamId} seasons={seasons} setSeasons={setSeasons}/>}
+      {screen==="season"&&<SeasonSummary teamId={team?.teamId} seasons={seasons} setSeasons={setSeasons} roster={roster}/>}
       {screen==="editteam"&&<EditTeam teamId={team?.teamId} roster={roster} setRoster={setRoster}/>}
       {screen==="editseason"&&<EditSeason teamId={team?.teamId} schedule={schedule} setSchedule={setSchedule} teamName={team?.name}/>}
       {screen==="lineup"&&<><h2 style={{fontFamily:"'Oswald',sans-serif",fontSize:20,color:C.text,margin:"0 0 6px",letterSpacing:1}}>SET LINEUP</h2>{gameInfo&&<p style={{fontFamily:"'Oswald',sans-serif",color:C.gold,fontSize:14,margin:"0 0 20px"}}>vs {gameInfo.opp} · {gameInfo.date}</p>}<LineupMgr lineup={lineup} setLineup={setLineup} onConfirm={confirmLineup}/></>}
