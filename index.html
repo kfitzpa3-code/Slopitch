@@ -1743,7 +1743,18 @@ function Summary({lineup,innings,opp,gameInfo,teamId,teamName,seasons,setSeasons
 }
 
 // ── Main App ───────────────────────────────────────────────────────────────
+// ── Keep Supabase awake ─────────────────────────────────────────────────────
+// Pings the DB on every app load so the free tier never pauses
+function usePingSupabase(){
+  useEffect(()=>{
+    fetch(`${SUPA_URL}/rest/v1/spt_global?limit=1`,{
+      headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}
+    }).catch(()=>{}); // silent — we don't care about the response
+  },[]);
+}
+
 function App(){
+  usePingSupabase();
   const[authScreen,setAuthScreen]=useState("landing");
   const[team,setTeam]=useState(null);
   const[roster,setRoster]=useState([]);
