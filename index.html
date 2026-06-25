@@ -1197,7 +1197,7 @@ function SeasonSummary({teamId,seasons,setSeasons,roster}){
   );
 
   return <div>
-    {showImport&&<ImportStatsModal teamId={teamId} seasons={seasons} setSeasons={setSeasons} onClose={()=>setShowImport(false)}/>
+    {showImport&&<ImportStatsModal teamId={teamId} seasons={seasons} setSeasons={setSeasons} onClose={()=>setShowImport(false)}/>}
     {editGame&&<EditGameModal game={editGame.game} gameKey={editGame.gameKey} year={editGame.year} teamId={teamId} roster={roster} seasons={seasons} setSeasons={setSeasons} onClose={()=>setEditGame(null)}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
       <h2 style={{fontFamily:"'Oswald',sans-serif",fontSize:20,color:C.text,margin:0,letterSpacing:1}}>SEASON STATISTICS</h2>
